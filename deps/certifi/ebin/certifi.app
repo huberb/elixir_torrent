@@ -1,0 +1,12 @@
+{application,certifi,
+             [{description,"An OTP library"},
+              {vsn,"2.0.0"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {env,[]},
+              {modules,[certifi,certifi_pt]},
+              {maintainers,["Benoit Chesneau"]},
+              {licenses,["BSD"]},
+              {links,[{"Github","https://github.com/certifi/erlang-certifi"}]},
+              {files,["src","certs_spec","test","rebar.config","README.md",
+                      "LICENSE"]}]}.

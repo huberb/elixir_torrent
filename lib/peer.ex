@@ -8,7 +8,7 @@ defmodule Torrent.Peer do
 
     try do
       socket = Socket.TCP.connect!(ip, port, packet: :line) 
-      socket |> handshake(peer_struct[:handshake])
+      socket |> say_hello(peer_struct[:handshake])
     rescue
       e -> IO.puts(e.message)
         if e.message != "host is unreachable" do
@@ -18,15 +18,19 @@ defmodule Torrent.Peer do
 
   end
 
-  def handshake(socket, hash) do
+  def say_hello(socket, handshake) do
     IO.puts "init handshake: "
+    socket |> Socket.Stream.send!(handshake)
+    socket |> Socket.Stream.recv! |> hear_hello
+  end
 
-    socket |> Socket.Stream.send!(hash)
-    message = socket |> Socket.Stream.recv!
-
+  def hear_hello(message) do 
     require IEx
     IEx.pry
-    # IO.puts message
+    start_talking
+  end
+
+  def start_talking do
   end
 
 end
