@@ -1,0 +1,6 @@
+{"1.1.0",
+[{<<"unicode_util_compat">>,{pkg,<<"unicode_util_compat">>,<<"0.3.1">>},0}]}.
+[
+{pkg_hash,[
+ {<<"unicode_util_compat">>, <<"A1F612A7B512638634A603C8F401892AFBF99B8CE93A45041F8AACA99CADB85E">>}]}
+].

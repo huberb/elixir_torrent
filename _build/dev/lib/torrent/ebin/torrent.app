@@ -1,0 +1,10 @@
+{application,torrent,
+             [{applications,[kernel,stdlib,elixir,logger,bencoder,socket,
+                             httpoison]},
+              {description,"torrent"},
+              {modules,['Elixir.Torrent','Elixir.Torrent.Client',
+                        'Elixir.Torrent.Metainfo','Elixir.Torrent.Peer',
+                        'Elixir.Torrent.Tracker']},
+              {registered,[]},
+              {vsn,"0.1.0"},
+              {extra_applications,[logger]}]}.
