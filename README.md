@@ -1,21 +1,12 @@
-# Torrent
+Elixir Bittorrent Client
+Work in Progress
 
-**TODO: Add description**
+Working:
+ - parse Torrentfile with Bencode
+ - connect to Tracker
+ - parse Peer Information and generate Handshake
+ - receive Message from one Peer
 
-## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `torrent` to your list of dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:torrent, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/torrent](https://hexdocs.pm/torrent).
-
+TODO:
+ - some kind of process handling
+ - Communicate with Peers to achieve File Transfer
