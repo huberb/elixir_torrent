@@ -3,7 +3,7 @@
                              httpoison]},
               {description,"torrent"},
               {modules,['Elixir.Torrent','Elixir.Torrent.Client',
-                        'Elixir.Torrent.Metainfo','Elixir.Torrent.Peer',
+                        'Elixir.Torrent.Parser','Elixir.Torrent.Peer',
                         'Elixir.Torrent.Tracker']},
               {registered,[]},
               {vsn,"0.1.0"},
