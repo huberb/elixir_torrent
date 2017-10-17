@@ -13,16 +13,23 @@ defmodule Torrent.Peer do
         |> initiate_connection(peer_struct[:info_hash])
 
       { :error, e } ->
-        e
+        raise e
     end
   end
 
   defp connect(ip, port) do
+    IO.puts "Try to connect to: " <> ip
     try do
-      socket = Socket.TCP.connect!(ip, port, packet: :line) 
+      socket = Socket.TCP.connect!(ip, port, [timeout: 2000]) 
       { :ok, socket }
     rescue
-      e -> { :error, e }
+      e ->
+        if e.message == "timeout" do
+          IO.puts "got a Timeout.. try again"
+          connect(ip, port)
+        else
+          { :error, e }
+        end
     end
   end
 
@@ -31,13 +38,40 @@ defmodule Torrent.Peer do
     |> say_hello(info_hash) 
     |> hear_hello
     |> verify_checksum(info_hash)
+    |> set_bitfield(socket)
+  end
+
+  def set_bitfield(answer_struct, socket) do
+    IO.puts "setting bitfield"
+
+    # for some reason we need to pull 3 empty bytes
+    # the 4th byte is a length param
+    { :ok, message } = socket |> Socket.Stream.recv(4)
+    len = message |> :binary.bin_to_list |> List.last
+
+    # now pull one more byte
+    # this is the state
+    { :ok, message } = socket |> Socket.Stream.recv(1)
+    state = message |> :binary.bin_to_list |> Enum.at(0)
+
+    if state == 5 do # bitfield flag set
+      IO.puts "got a valid Bitfield Flag."
+    else
+      IO.puts "Bitfield Flag not set, Abort!"
+      raise "Bitfield Flag not set on Peer"
+    end
+
+    require IEx
+    IEx.pry
   end
 
   def verify_checksum(answer_struct, info_hash) do
     real_hash = info_hash |> Bencoder.encode |> sha_sum
-    if answer_struct != real_hash do
+    { :ok, foreign_hash } = answer_struct[:info_hash]
+    if foreign_hash != real_hash do
       raise "Wrong Checksum! Abort!"
     else
+      IO.puts "handshake successful"
       answer_struct
     end
   end
@@ -50,10 +84,6 @@ defmodule Torrent.Peer do
                 |> generate_handshake
     socket |> Socket.Stream.send!(handshake)
     socket
-  end
-
-  def try_to_understand_the_dude(message) do
-
   end
 
   def hear_hello(socket) do 

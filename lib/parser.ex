@@ -13,7 +13,7 @@ defmodule Torrent.Parser do
   end
 
   def parse_all_peers(peer_list) do
-    peer_list |> Enum.map(&parse_peer/1)
+    peers = peer_list |> Enum.map(&parse_peer/1) |> List.delete_at(0)
   end
 
   defp parse_peer(peer) do
