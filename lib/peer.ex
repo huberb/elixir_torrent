@@ -5,38 +5,69 @@ defmodule Torrent.Peer do
     { ip, port } = peer_struct[:peer]
 
     IO.puts ip
+    IO.puts port
 
+    case connect(ip, port) do
+      { :ok, socket } ->
+        socket 
+        |> initiate_connection(peer_struct[:info_hash])
+
+      { :error, e } ->
+        e
+    end
+  end
+
+  defp connect(ip, port) do
     try do
       socket = Socket.TCP.connect!(ip, port, packet: :line) 
-      socket |> say_hello(peer_struct[:info_hash])
+      { :ok, socket }
     rescue
-      e -> IO.puts(e.message)
-        if e.message != "host is unreachable" do
-          raise e
-        end
+      e -> { :error, e }
     end
+  end
 
+  def initiate_connection(socket, info_hash) do
+    socket 
+    |> say_hello(info_hash) 
+    |> hear_hello
+    |> verify_checksum(info_hash)
+  end
+
+  def verify_checksum(answer_struct, info_hash) do
+    real_hash = info_hash |> Bencoder.encode |> sha_sum
+    if answer_struct != real_hash do
+      raise "Wrong Checksum! Abort!"
+    else
+      answer_struct
+    end
   end
 
   def say_hello(socket, info_hash) do
     IO.puts "init handshake: "
-    sha_info_hash = info_hash
-                    |> Bencoder.encode
-                    |> sha_sum
-
-    handshake = sha_info_hash 
+    handshake = info_hash
+                |> Bencoder.encode
+                |> sha_sum
                 |> generate_handshake
     socket |> Socket.Stream.send!(handshake)
-    socket |> Socket.Stream.recv! |> hear_hello
+    socket
   end
 
-  def hear_hello(message) do 
-    require IEx
-    IEx.pry
-    start_talking
+  def try_to_understand_the_dude(message) do
+
   end
 
-  def start_talking do
+  def hear_hello(socket) do 
+    socket |> Socket.packet! :raw
+    { :ok, message } = socket |> Socket.Stream.recv(1)
+    request_length = message |> :binary.bin_to_list |> Enum.at(0)
+
+    answer = %{
+      pstrlen: request_length,
+      pstr: socket |> Socket.Stream.recv(request_length),
+      placeholder: socket |> Socket.Stream.recv(8),
+      info_hash: socket |> Socket.Stream.recv(20),
+      peer_id: socket |> Socket.Stream.recv(20)
+    }
   end
 
   defp sha_sum(binary) do
@@ -62,6 +93,5 @@ defmodule Torrent.Peer do
     number = number |> Integer.to_string |> String.rjust(13, ?0)
     "-#{id}#{version}#{number}"
   end
-
 
 end

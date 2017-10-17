@@ -4,7 +4,7 @@ defmodule Torrent.Client do
     meta_info = torrent_path
                 |> Torrent.Parser.parse_file
 
-    body = meta_info["info"]
+    body = meta_info
            |> Torrent.Tracker.request
            |> connect_all_peers(meta_info["info"])
   end
