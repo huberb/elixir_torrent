@@ -6,8 +6,7 @@ defmodule Torrent.Peer do
 
     case connect(ip, port) do
       { :ok, socket } ->
-        socket 
-        |> initiate_connection(peer_struct[:info_hash])
+        socket |> initiate_connection(peer_struct[:info_hash])
 
       { :error, e } ->
         raise e
@@ -35,44 +34,25 @@ defmodule Torrent.Peer do
     |> say_hello(info_hash) 
     |> hear_hello
     |> verify_checksum(info_hash)
-    |> set_bitfield(socket)
+
+    socket |> set_bitfield |> Torrent.Stream.recv
   end
 
-  def set_bitfield(answer_struct, socket) do
+  # some peers dont send a bitfield
+  # TODO: handle this
+  # TODO: move this to stream.ex
+  def set_bitfield(socket) do
     IO.puts "setting bitfield"
 
-    # for some reason we need to pull 3 empty bytes
-    # the 4th byte is a length param
-    { :ok, message } = socket |> Socket.Stream.recv(4)
-    len = message |> :binary.bin_to_list |> List.last
-    IO.puts "recv length: "
-    IO.puts len
+    { id, len, payload } = socket |> Torrent.Stream.recv_message
 
-    # now pull one more byte
-    # this is the state
-    { :ok, message } = socket |> Socket.Stream.recv(1)
-    state = message |> :binary.bin_to_list |> Enum.at(0)
-    IO.puts "recv state: "
-    IO.puts state
-
-    # TODO: struct for all flags
-    if state == 5 do # bitfield flag set
+    if id == 5 do # bitfield flag set
       IO.puts "got a valid Bitfield Flag."
-      # TODO: find out what this values do
-      # if we got a bitfield, we pull length - 1 bytes
-      { :ok, bitstring } = socket |> Socket.Stream.recv(len - 1)
-      # need the bitstring in binary?
-      binary_list = bitstring 
-                    |> :binary.bin_to_list 
-                    |> Enum.map(fn(b) -> Integer.to_string(b, 2) end)
 
-      IO.puts "got a bitstring: "
-      # TODO: do something with this
-      IO.puts binary_list
-
-      socket |> Torrent.Stream.recv
+      binary = payload |> Enum.map(fn(b) -> Integer.to_string(b, 2) end)
+      IO.puts binary
+      socket
     else
-      IO.puts "Bitfield Flag not set, Abort!"
       raise "Bitfield Flag not set on Peer"
     end
 
@@ -85,7 +65,6 @@ defmodule Torrent.Peer do
       raise "Wrong Checksum! Abort!"
     else
       IO.puts "handshake successful"
-      answer_struct
     end
   end
 
@@ -100,11 +79,11 @@ defmodule Torrent.Peer do
   end
 
   def hear_hello(socket) do 
-    socket |> Socket.packet! :raw
+    socket |> Socket.packet!(:raw)
     { :ok, message } = socket |> Socket.Stream.recv(1)
     request_length = message |> :binary.bin_to_list |> Enum.at(0)
 
-    answer = %{
+    %{
       pstrlen: request_length,
       pstr: socket |> Socket.Stream.recv(request_length),
       placeholder: socket |> Socket.Stream.recv(8),
@@ -123,7 +102,7 @@ defmodule Torrent.Peer do
       # add 8 Zeros and the SHA Hash from the Tracker info, 20 Bytes long
     << 0, 0, 0, 0, 0, 0, 0, 0, sha_info_hash :: binary, >> <>
       # some Peer ID, also 20 Bytes long
-    << generate_peer_id :: binary >>
+    << generate_peer_id() :: binary >>
   end
 
   defp generate_peer_id do

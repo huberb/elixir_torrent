@@ -12,7 +12,7 @@ defmodule Torrent.Stream do
   end
 
   def send_interested(socket) do
-    # TODO: can write this better
+    # len 1, id 2
     message = [0,0,0,1,2] |> :binary.list_to_bin
     socket |> Socket.Stream.send!(message)
     IO.puts "send interested message"
@@ -44,11 +44,11 @@ defmodule Torrent.Stream do
   end
 
   def wait_for_unchoke(socket, count) do
-    IO.puts "so far i got #{count} chokes"
-
+    IO.puts "got #{count} chokes"
     { id, len, payload } = socket |> recv_message
 
     if id == 1 do # unchoke
+      IO.puts "unchoke!"
       socket
     else
       socket |> wait_for_unchoke(count + 1)
@@ -89,10 +89,6 @@ defmodule Torrent.Stream do
     block
   end
 
-  # TODO: better design
-  def recv_payload({ len, id }, socket) do
-  end
-
   def has_payload?(id) do
     if id in [4, 5, 6, 7, 8, 9] do
       true
@@ -111,10 +107,7 @@ defmodule Torrent.Stream do
 
   def recv_byte(socket, count) do
     { :ok, message } = socket |> Socket.Stream.recv(count)
-    # IO.puts(message |> :binary.bin_to_list)
-    message = message |> :binary.bin_to_list
-    IO.puts(message)
-    message
+    message |> :binary.bin_to_list
   end
 
   def recv_length_param(socket) do
