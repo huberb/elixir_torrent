@@ -3,7 +3,12 @@ defmodule Torrent.Stream do
   def recv(socket) do
     # spawn keep_alive(socket)
     socket |> send_interested
-    socket |> wait_for_unchoke(0)
+           |> wait_for_unchoke(0)
+           |> send_request
+
+    block = socket |> recv_block
+    require IEx
+    IEx.pry
   end
 
   def send_interested(socket) do
@@ -11,6 +16,7 @@ defmodule Torrent.Stream do
     message = [0,0,0,1,2] |> :binary.list_to_bin
     socket |> Socket.Stream.send!(message)
     IO.puts "send interested message"
+    socket
   end
 
   def keep_alive(socket) do
@@ -25,36 +31,32 @@ defmodule Torrent.Stream do
     end
   end
 
-  def wait_for_unchoke(socket, count) do
-    IO.puts "so far i got #{count} chokes"
-    count = count + 1
-
+  def recv_message(socket) do
     len = socket |> recv_length_param
     id = len |> recv_id(socket)
+    payload = nil
 
-    if id == 4 do
-      payload = {len, id} |> recv_payload(socket)
+    if id |> has_payload? do
+      payload = socket |> recv_byte(len - 1)
     end
 
-    IO.puts "len: "
-    IO.puts len
-    IO.puts "id: "
-    IO.puts id
-    if id == 1 do # unchoke
-      # after we get a unchoke message
-      # we send a request for the first piece
-      socket |> send_request
+    { id, len, payload }
+  end
 
-      piece = socket |> get_piece
-      require IEx
-      IEx.pry
+  def wait_for_unchoke(socket, count) do
+    IO.puts "so far i got #{count} chokes"
+
+    { id, len, payload } = socket |> recv_message
+
+    if id == 1 do # unchoke
+      socket
     else
-      socket |> wait_for_unchoke(count)
+      socket |> wait_for_unchoke(count + 1)
     end
   end
 
-  def get_piece(socket) do
-    mess = socket |> Socket.Stream.recv(1)
+  def recv_block(socket) do
+    { id, len, payload } = socket |> recv_message
   end
 
   def send_request(socket) do
@@ -89,12 +91,6 @@ defmodule Torrent.Stream do
 
   # TODO: better design
   def recv_payload({ len, id }, socket) do
-    if id |> has_payload? do
-      IO.puts "receiving Payload"
-      payload = socket |> recv_byte(len - 1)
-    else
-      nil
-    end
   end
 
   def has_payload?(id) do
