@@ -4,7 +4,7 @@
               {description,"torrent"},
               {modules,['Elixir.Torrent','Elixir.Torrent.Client',
                         'Elixir.Torrent.Parser','Elixir.Torrent.Peer',
-                        'Elixir.Torrent.Tracker']},
+                        'Elixir.Torrent.Stream','Elixir.Torrent.Tracker']},
               {registered,[]},
               {vsn,"0.1.0"},
               {extra_applications,[logger]}]}.

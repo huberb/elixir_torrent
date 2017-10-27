@@ -4,9 +4,6 @@ defmodule Torrent.Peer do
 
     { ip, port } = peer_struct[:peer]
 
-    IO.puts ip
-    IO.puts port
-
     case connect(ip, port) do
       { :ok, socket } ->
         socket 
@@ -48,21 +45,37 @@ defmodule Torrent.Peer do
     # the 4th byte is a length param
     { :ok, message } = socket |> Socket.Stream.recv(4)
     len = message |> :binary.bin_to_list |> List.last
+    IO.puts "recv length: "
+    IO.puts len
 
     # now pull one more byte
     # this is the state
     { :ok, message } = socket |> Socket.Stream.recv(1)
     state = message |> :binary.bin_to_list |> Enum.at(0)
+    IO.puts "recv state: "
+    IO.puts state
 
+    # TODO: struct for all flags
     if state == 5 do # bitfield flag set
       IO.puts "got a valid Bitfield Flag."
+      # TODO: find out what this values do
+      # if we got a bitfield, we pull length - 1 bytes
+      { :ok, bitstring } = socket |> Socket.Stream.recv(len - 1)
+      # need the bitstring in binary?
+      binary_list = bitstring 
+                    |> :binary.bin_to_list 
+                    |> Enum.map(fn(b) -> Integer.to_string(b, 2) end)
+
+      IO.puts "got a bitstring: "
+      # TODO: do something with this
+      IO.puts binary_list
+
+      socket |> Torrent.Stream.recv
     else
       IO.puts "Bitfield Flag not set, Abort!"
       raise "Bitfield Flag not set on Peer"
     end
 
-    require IEx
-    IEx.pry
   end
 
   def verify_checksum(answer_struct, info_hash) do
@@ -112,7 +125,6 @@ defmodule Torrent.Peer do
       # some Peer ID, also 20 Bytes long
     << generate_peer_id :: binary >>
   end
-
 
   defp generate_peer_id do
     # TODO: generate better Peer_id
