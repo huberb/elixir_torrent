@@ -4,21 +4,17 @@ defmodule Torrent.Peer do
 
     { ip, port } = info_structs[:peer]
 
-    case connect(ip, port) do
-      { :ok, socket } ->
-        socket |> initiate_connection(info_structs)
-
-      { :error, e } ->
-        # TODO: handle this error
-        raise e
+    { :ok, pid } = Task.start_link fn -> 
+      connect(ip, port)
+      |> initiate_connection(info_structs)
     end
+    pid
   end
 
   defp connect(ip, port) do
     IO.puts "Try to connect to: " <> ip
     try do
-      socket = Socket.TCP.connect!(ip, port, [timeout: 2000]) 
-      { :ok, socket }
+      Socket.TCP.connect!(ip, port, [timeout: 2000]) 
     rescue
       e ->
         if e.message == "timeout" do
@@ -43,9 +39,9 @@ defmodule Torrent.Peer do
 
   def verify_checksum(answer_struct, info_hash) do
     real_hash = info_hash |> Bencoder.encode |> Torrent.Parser.sha_sum
-    { :ok, foreign_hash } = answer_struct[:info_hash]
+    foreign_hash = answer_struct[:info_hash]
     if foreign_hash != real_hash do
-      raise "Wrong Checksum! Abort!"
+      exit(:wrong_checksum)
     else
       IO.puts "handshake successful"
     end
@@ -67,10 +63,10 @@ defmodule Torrent.Peer do
 
     %{
       pstrlen: request_length,
-      pstr: socket |> Socket.Stream.recv(request_length),
-      placeholder: socket |> Socket.Stream.recv(8),
-      info_hash: socket |> Socket.Stream.recv(20),
-      peer_id: socket |> Socket.Stream.recv(20)
+      pstr: socket |> Socket.Stream.recv!(request_length),
+      placeholder: socket |> Socket.Stream.recv!(8),
+      info_hash: socket |> Socket.Stream.recv!(20),
+      peer_id: socket |> Socket.Stream.recv!(20)
     }
   end
 

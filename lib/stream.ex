@@ -23,7 +23,7 @@ defmodule Torrent.Stream do
     IO.puts "got a valid Bitfield Flag."
     payload
     else
-      raise "Bitfield Flag not set on Peer"
+      exit(:no_bitfield)
     end
   end
 
@@ -74,7 +74,6 @@ defmodule Torrent.Stream do
 
   def recv_block(socket, write_process_pid, meta_info) do
     try do
-
       byte_length = meta_info["length"]
       len = socket |> recv_32_bit_int
       id = socket |> recv_8_bit_int
@@ -95,10 +94,11 @@ defmodule Torrent.Stream do
       Torrent.Parser.validate_data(meta_info["pieces"], block)
 
       send write_process_pid, { :put, block }
-      recv_block(socket, write_process_pid, meta_info)
     rescue e ->
       IO.puts e.message
     end
+
+    recv_block(socket, write_process_pid, meta_info)
   end
 
   def has_payload?(id) do
@@ -112,7 +112,8 @@ defmodule Torrent.Stream do
   def recv_byte(socket, count) do
     { ok, message } = socket |> Socket.Stream.recv(count)
     if message == nil do
-      raise "Connection Closed"
+      IO.puts "connection closed"
+      exit(:normal)
     end
     message
   end

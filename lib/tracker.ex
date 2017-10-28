@@ -5,8 +5,6 @@ defmodule Torrent.Tracker do
   end
 
   def generate_query(torrent_info) do
-    # TODO: dont hardcode port
-    port = 6881
     info_hash = torrent_info["info"]
                 |> Bencoder.encode
                 |> Torrent.Parser.sha_sum
@@ -14,7 +12,7 @@ defmodule Torrent.Tracker do
     # TODO: less hardcode
     query = %{
       "info_hash"  => info_hash,
-      "port"       => port,
+      "port"       => 6881,
       "peer_id"    => 78742315344684734465,
       "uploaded"   => 0,
       "downloaded" => 0,
@@ -29,6 +27,7 @@ defmodule Torrent.Tracker do
   end
 
   defp get_body(query) do
+    # TODO: remove this dep
     HTTPoison.start
 
     case HTTPoison.get(query) do

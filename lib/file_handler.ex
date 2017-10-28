@@ -2,8 +2,9 @@ defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, output_path) do
     meta_info = tracker_info["info"]
+    require IEx
+    IEx.pry
     { ok, pid } = Task.start_link(fn -> loop([], meta_info) end)
-    if ok != :ok do raise "Could not start File Process" end
     pid
   end
 
@@ -14,14 +15,9 @@ defmodule Torrent.Filehandler do
     end
 
     receive do
-      {:get, index, caller} ->
-        send caller, Enum.at(file_data, index)
-        loop(file_data, meta_info)
-
       {:put, block} ->
         IO.puts "Filehandler recvieved data block"
         IO.inspect block
-        IO.puts file_data |> length
         loop(file_data ++ [block], meta_info)
     end
   end
