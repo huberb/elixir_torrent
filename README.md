@@ -2,11 +2,14 @@ Elixir Bittorrent Client
 Work in Progress
 
 Working:
- - parse Torrentfile with Bencode
- - connect to Tracker
- - parse Peer Information and generate Handshake
- - receive Message from one Peer
+ - parse torrentfile with Bencode
+ - connect to tracker
+ - parse Peer information and generate handshake
+ - receive file from one Peer
+ - write file to disk
 
 TODO:
  - some kind of process handling
- - Communicate with Peers to achieve File Transfer
+ - handle more peers
+ - multi file transfer
+ - seed
