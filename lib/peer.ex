@@ -1,14 +1,15 @@
 defmodule Torrent.Peer do
 
-  def connect(peer_struct) do 
+  def connect(info_structs) do 
 
-    { ip, port } = peer_struct[:peer]
+    { ip, port } = info_structs[:peer]
 
     case connect(ip, port) do
       { :ok, socket } ->
-        socket |> initiate_connection(peer_struct[:info_hash])
+        socket |> initiate_connection(info_structs)
 
       { :error, e } ->
+        # TODO: handle this error
         raise e
     end
   end
@@ -29,33 +30,13 @@ defmodule Torrent.Peer do
     end
   end
 
-  def initiate_connection(socket, info_hash) do
+  def initiate_connection(socket, info_structs) do
     socket 
-    |> say_hello(info_hash) 
+    |> say_hello(info_structs[:meta_info]) 
     |> hear_hello
-    |> verify_checksum(info_hash)
+    |> verify_checksum(info_structs[:meta_info])
 
-    socket |> set_bitfield |> Torrent.Stream.recv
-  end
-
-  # some peers dont send a bitfield
-  # TODO: handle this
-  # TODO: move this to stream.ex
-  def set_bitfield(socket) do
-    IO.puts "setting bitfield"
-
-    { id, len, payload } = socket |> Torrent.Stream.recv_message
-
-    if id == 5 do # bitfield flag set
-      IO.puts "got a valid Bitfield Flag."
-
-      binary = payload |> Enum.map(fn(b) -> Integer.to_string(b, 2) end)
-      IO.puts binary
-      socket
-    else
-      raise "Bitfield Flag not set on Peer"
-    end
-
+    socket |> Torrent.Stream.leech(info_structs[:client_info][:writer_process])
   end
 
   def verify_checksum(answer_struct, info_hash) do
@@ -69,7 +50,6 @@ defmodule Torrent.Peer do
   end
 
   def say_hello(socket, info_hash) do
-    IO.puts "init handshake: "
     handshake = info_hash
                 |> Bencoder.encode
                 |> sha_sum
@@ -99,9 +79,9 @@ defmodule Torrent.Peer do
   defp generate_handshake(sha_info_hash) do
     # The Number 19 in Binary followed by the Protocol String
     << 19, "BitTorrent protocol" :: binary >> <>
-      # add 8 Zeros and the SHA Hash from the Tracker info, 20 Bytes long
+    # add 8 Zeros and the SHA Hash from the Tracker info, 20 Bytes long
     << 0, 0, 0, 0, 0, 0, 0, 0, sha_info_hash :: binary, >> <>
-      # some Peer ID, also 20 Bytes long
+    # some Peer ID, also 20 Bytes long
     << generate_peer_id() :: binary >>
   end
 

@@ -1,14 +1,29 @@
 defmodule Torrent.Stream do
 
-  def recv(socket) do
+  def leech(socket, writer_process) do
     # spawn keep_alive(socket)
-    socket |> send_interested
-           |> wait_for_unchoke(0)
-           |> send_request
+    bitfield = socket |> set_bitfield
 
-    block = socket |> recv_block
-    require IEx
-    IEx.pry
+    spawn fn() -> request_all(socket, bitfield) end
+
+    socket |> send_interested
+    |> wait_for_unchoke(0)
+    |> recv_block(writer_process)
+  end
+
+  # some peers dont send a bitfield
+  # TODO: handle this
+  def set_bitfield(socket) do
+    IO.puts "setting bitfield"
+    { id, len, payload } = socket |> recv_message
+
+    if id == 5 do # bitfield flag set
+    IO.puts "got a valid Bitfield Flag."
+    payload
+    else
+      raise "Bitfield Flag not set on Peer"
+    end
+
   end
 
   def send_interested(socket) do
@@ -32,8 +47,8 @@ defmodule Torrent.Stream do
   end
 
   def recv_message(socket) do
-    len = socket |> recv_length_param
-    id = len |> recv_id(socket)
+    len = socket |> recv_32_bit_int
+    id = recv_8_bit_int(socket)
     payload = nil
 
     if id |> has_payload? do
@@ -48,45 +63,66 @@ defmodule Torrent.Stream do
     { id, len, payload } = socket |> recv_message
 
     if id == 1 do # unchoke
-      IO.puts "unchoke!"
-      socket
+    IO.puts "unchoke!"
+    socket
     else
       socket |> wait_for_unchoke(count + 1)
     end
   end
 
-  def recv_block(socket) do
-    { id, len, payload } = socket |> recv_message
+  # TODO: hash validation
+  def recv_block(socket, write_process_pid) do
+    try do
+
+      len = socket |> recv_32_bit_int
+      block = %{
+        len: len,
+        id: socket |> recv_8_bit_int,
+        index: socket |> recv_32_bit_int,
+        offset: socket |> recv_32_bit_int,
+        # rest of the stream is the file data,
+        # there are 
+        # len - size(id) - size(index) - size(offset)
+        # bytes left
+        data: socket |> recv_byte(len - 9)
+      }
+
+      send write_process_pid, { :put, block }
+      recv_block(socket, write_process_pid)
+    rescue e ->
+      IO.puts e.message
+    end
   end
 
-  def send_request(socket) do
-    socket |> Socket.Stream.send!(request_block)
+  def request_all(socket, bitfield) do
+    bitfield 
+    |> Torrent.Parser.parse_bitfield
+    |> Enum.with_index
+    |> Enum.each(fn({piece, index}) -> 
+      send_request(piece, index, socket) 
+    end)
+
   end
 
-  def request_block do
-    # the doc says i need len 12 here, but for some
-    # reason the peer won't answer and wireshark says
-    # malformed packet if i don't use 13
-    # TODO: find out why
+  def send_request(piece, index, socket) do
+    if piece[:available] do
+      IO.puts "sending request for piece Nr: "
+      IO.puts index
+      socket |> Socket.Stream.send!(index |> request_query)
+    end
+  end
+
+  def request_query(index) do
     len = 13
-
-    # id is 6, just like in the docs
     id = 6
-    
-    # packet structure after len and id:
-    # ---------------------------------------------
-    # | Piece Index | Block Offset | Block Length |
-    # ---------------------------------------------
 
     # TODO: dont hardcode
-    block = << len :: 32 >> <> # length
+    << len :: 32 >> <> # length
     << id :: 8 >> <> # id
-    << 0 :: 32 >> <> # index
+    << index :: 32 >> <> # index
     << 0 :: 32 >> <> # offset
     # people suggest 2^14 here
     << 16384 :: 32 >> # length
-
-    block
   end
 
   def has_payload?(id) do
@@ -97,21 +133,20 @@ defmodule Torrent.Stream do
     end
   end
 
-  def recv_id(len, socket) do
-    if len == 0 do
-      -1
-    else
-      socket |> recv_byte(1) |> Enum.at(0)
-    end
+  def recv_8_bit_int(socket) do 
+    socket |> recv_byte(1) |> :binary.bin_to_list |> Enum.at(0) 
   end
 
   def recv_byte(socket, count) do
-    { :ok, message } = socket |> Socket.Stream.recv(count)
-    message |> :binary.bin_to_list
+    { ok, message } = socket |> Socket.Stream.recv(count)
+    if message == nil do
+      raise "Connection Closed"
+    end
+    message
   end
 
-  def recv_length_param(socket) do
-    socket |> recv_byte(4) |> List.last
+  def recv_32_bit_int(socket) do
+    socket |> recv_byte(4) |> :binary.decode_unsigned
   end
 
 end

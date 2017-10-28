@@ -37,4 +37,29 @@ defmodule Torrent.Parser do
     lower_byte <> higher_byte |> String.to_integer(2)
   end
 
+  def parse_bitfield(bitfield) do
+    bitfield
+    |> :binary.bin_to_list
+    |> Enum.map(fn(i) -> Integer.to_string(i, 2) end)
+    |> Enum.map(&make_len_8/1)
+    |> Enum.join("")
+    |> String.graphemes
+    |> Enum.map(&piece_struct/1)
+  end
+
+  def piece_struct(char) do
+    case char do
+      "0" -> %{ available: false, pending: false }
+      "1" -> %{ available: true, pending: true }
+    end
+  end
+
+  def make_len_8(binary_str) do
+    if binary_str |> String.length == 8 do
+      binary_str
+    else
+      make_len_8("0" <> binary_str)
+    end
+  end
+
 end
