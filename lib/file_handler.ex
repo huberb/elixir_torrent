@@ -7,18 +7,15 @@ defmodule Torrent.Filehandler do
   end
 
   defp loop(list) do
-
     receive do
-
       {:get, index, caller} ->
         send caller, Enum.at(list, index)
         loop(list)
 
       {:put, block} ->
-        IO.puts "received block"
+        IO.puts "received block with Nr:"
+        IO.puts block[:index]
         loop(list ++ [block])
-
     end
-
   end
 end

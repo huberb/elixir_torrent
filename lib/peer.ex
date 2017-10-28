@@ -36,11 +36,13 @@ defmodule Torrent.Peer do
     |> hear_hello
     |> verify_checksum(info_structs[:meta_info])
 
-    socket |> Torrent.Stream.leech(info_structs[:client_info][:writer_process])
+    writer_process = info_structs[:client_info][:writer_process]
+
+    socket |> Torrent.Stream.leech(writer_process, info_structs[:meta_info])
   end
 
   def verify_checksum(answer_struct, info_hash) do
-    real_hash = info_hash |> Bencoder.encode |> sha_sum
+    real_hash = info_hash |> Bencoder.encode |> Torrent.Parser.sha_sum
     { :ok, foreign_hash } = answer_struct[:info_hash]
     if foreign_hash != real_hash do
       raise "Wrong Checksum! Abort!"
@@ -52,7 +54,7 @@ defmodule Torrent.Peer do
   def say_hello(socket, info_hash) do
     handshake = info_hash
                 |> Bencoder.encode
-                |> sha_sum
+                |> Torrent.Parser.sha_sum
                 |> generate_handshake
     socket |> Socket.Stream.send!(handshake)
     socket
@@ -70,10 +72,6 @@ defmodule Torrent.Peer do
       info_hash: socket |> Socket.Stream.recv(20),
       peer_id: socket |> Socket.Stream.recv(20)
     }
-  end
-
-  defp sha_sum(binary) do
-    :crypto.hash(:sha, binary)
   end
 
   defp generate_handshake(sha_info_hash) do

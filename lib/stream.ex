@@ -1,6 +1,6 @@
 defmodule Torrent.Stream do
 
-  def leech(socket, writer_process) do
+  def leech(socket, writer_process, meta_info) do
     # spawn keep_alive(socket)
     bitfield = socket |> set_bitfield
 
@@ -8,7 +8,7 @@ defmodule Torrent.Stream do
 
     socket |> send_interested
     |> wait_for_unchoke(0)
-    |> recv_block(writer_process)
+    |> recv_block(writer_process, meta_info)
   end
 
   # some peers dont send a bitfield
@@ -23,7 +23,6 @@ defmodule Torrent.Stream do
     else
       raise "Bitfield Flag not set on Peer"
     end
-
   end
 
   def send_interested(socket) do
@@ -70,11 +69,14 @@ defmodule Torrent.Stream do
     end
   end
 
-  # TODO: hash validation
-  def recv_block(socket, write_process_pid) do
+  def recv_block(socket, write_process_pid, meta_info) do
     try do
 
+      byte_length = meta_info["length"]
       len = socket |> recv_32_bit_int
+      IO.puts "length left:"
+      IO.puts byte_length
+
       block = %{
         len: len,
         id: socket |> recv_8_bit_int,
@@ -87,11 +89,26 @@ defmodule Torrent.Stream do
         data: socket |> recv_byte(len - 9)
       }
 
+      validate_data(meta_info["pieces"], block)
+
       send write_process_pid, { :put, block }
-      recv_block(socket, write_process_pid)
+      recv_block(socket, write_process_pid, meta_info)
     rescue e ->
       IO.puts e.message
     end
+  end
+
+  def validate_data(pieces, block) do
+    foreign_hash = block[:data] |> Torrent.Parser.sha_sum
+    real_hash = pieces |> binary_part(block[:index] * 20, 20)
+    IO.puts "try to validate piece Nr: "
+    IO.puts block[:index]
+    if foreign_hash != real_hash do
+      require IEx
+      IEx.pry
+      raise "Hash Validation failed on Piece! Abort!"
+    end
+    IO.puts "Hash Validation on Piece successful"
   end
 
   def request_all(socket, bitfield) do
@@ -101,7 +118,6 @@ defmodule Torrent.Stream do
     |> Enum.each(fn({piece, index}) -> 
       send_request(piece, index, socket) 
     end)
-
   end
 
   def send_request(piece, index, socket) do
@@ -133,16 +149,16 @@ defmodule Torrent.Stream do
     end
   end
 
-  def recv_8_bit_int(socket) do 
-    socket |> recv_byte(1) |> :binary.bin_to_list |> Enum.at(0) 
-  end
-
   def recv_byte(socket, count) do
     { ok, message } = socket |> Socket.Stream.recv(count)
     if message == nil do
       raise "Connection Closed"
     end
     message
+  end
+
+  def recv_8_bit_int(socket) do 
+    socket |> recv_byte(1) |> :binary.bin_to_list |> Enum.at(0) 
   end
 
   def recv_32_bit_int(socket) do

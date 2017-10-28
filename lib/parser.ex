@@ -62,4 +62,9 @@ defmodule Torrent.Parser do
     end
   end
 
+  def sha_sum(binary) do
+    :crypto.hash(:sha, binary)
+  end
+
+
 end
