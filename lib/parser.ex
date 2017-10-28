@@ -47,6 +47,17 @@ defmodule Torrent.Parser do
     |> Enum.map(&piece_struct/1)
   end
 
+  def validate_data(pieces, block) do
+    foreign_hash = block[:data] |> sha_sum
+    real_hash = pieces |> binary_part(block[:index] * 20, 20)
+    if foreign_hash != real_hash do
+      require IEx
+      IEx.pry
+      raise "Hash Validation failed on Piece! Abort!"
+    end
+  end
+
+
   def piece_struct(char) do
     case char do
       "0" -> %{ available: false, pending: false }
@@ -54,7 +65,7 @@ defmodule Torrent.Parser do
     end
   end
 
-  def make_len_8(binary_str) do
+  defp make_len_8(binary_str) do
     if binary_str |> String.length == 8 do
       binary_str
     else
@@ -65,6 +76,5 @@ defmodule Torrent.Parser do
   def sha_sum(binary) do
     :crypto.hash(:sha, binary)
   end
-
 
 end

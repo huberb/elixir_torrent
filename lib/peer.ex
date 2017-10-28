@@ -36,7 +36,7 @@ defmodule Torrent.Peer do
     |> hear_hello
     |> verify_checksum(info_structs[:meta_info])
 
-    writer_process = info_structs[:client_info][:writer_process]
+    writer_process = info_structs[:writer_pid]
 
     socket |> Torrent.Stream.leech(writer_process, info_structs[:meta_info])
   end

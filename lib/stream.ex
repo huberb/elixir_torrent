@@ -4,7 +4,9 @@ defmodule Torrent.Stream do
     # spawn keep_alive(socket)
     bitfield = socket |> set_bitfield
 
-    spawn fn() -> request_all(socket, bitfield) end
+    spawn fn() -> 
+      Torrent.Request.request_all(socket, bitfield, meta_info) 
+    end
 
     socket |> send_interested
     |> wait_for_unchoke(0)
@@ -33,6 +35,7 @@ defmodule Torrent.Stream do
     socket
   end
 
+  # TODO: use this
   def keep_alive(socket) do
     try do
       IO.puts "send keep_alive"
@@ -74,13 +77,13 @@ defmodule Torrent.Stream do
 
       byte_length = meta_info["length"]
       len = socket |> recv_32_bit_int
-      IO.puts "length left:"
-      IO.puts byte_length
+      id = socket |> recv_8_bit_int
+      index = socket |> recv_32_bit_int
 
       block = %{
         len: len,
-        id: socket |> recv_8_bit_int,
-        index: socket |> recv_32_bit_int,
+        id: id,
+        index: index,
         offset: socket |> recv_32_bit_int,
         # rest of the stream is the file data,
         # there are 
@@ -89,56 +92,13 @@ defmodule Torrent.Stream do
         data: socket |> recv_byte(len - 9)
       }
 
-      validate_data(meta_info["pieces"], block)
+      Torrent.Parser.validate_data(meta_info["pieces"], block)
 
       send write_process_pid, { :put, block }
       recv_block(socket, write_process_pid, meta_info)
     rescue e ->
       IO.puts e.message
     end
-  end
-
-  def validate_data(pieces, block) do
-    foreign_hash = block[:data] |> Torrent.Parser.sha_sum
-    real_hash = pieces |> binary_part(block[:index] * 20, 20)
-    IO.puts "try to validate piece Nr: "
-    IO.puts block[:index]
-    if foreign_hash != real_hash do
-      require IEx
-      IEx.pry
-      raise "Hash Validation failed on Piece! Abort!"
-    end
-    IO.puts "Hash Validation on Piece successful"
-  end
-
-  def request_all(socket, bitfield) do
-    bitfield 
-    |> Torrent.Parser.parse_bitfield
-    |> Enum.with_index
-    |> Enum.each(fn({piece, index}) -> 
-      send_request(piece, index, socket) 
-    end)
-  end
-
-  def send_request(piece, index, socket) do
-    if piece[:available] do
-      IO.puts "sending request for piece Nr: "
-      IO.puts index
-      socket |> Socket.Stream.send!(index |> request_query)
-    end
-  end
-
-  def request_query(index) do
-    len = 13
-    id = 6
-
-    # TODO: dont hardcode
-    << len :: 32 >> <> # length
-    << id :: 8 >> <> # id
-    << index :: 32 >> <> # index
-    << 0 :: 32 >> <> # offset
-    # people suggest 2^14 here
-    << 16384 :: 32 >> # length
   end
 
   def has_payload?(id) do
