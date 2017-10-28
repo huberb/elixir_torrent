@@ -5,10 +5,27 @@ defmodule Torrent.Tracker do
   end
 
   def generate_query(torrent_info) do
+    # TODO: dont hardcode port
+    port = 6881
+    info_hash = torrent_info["info"]
+                |> Bencoder.encode
+                |> Torrent.Parser.sha_sum
 
-    # TODO: dont hardcode this
-    "http://thomasballinger.com:6969/announce?info_hash=%2B%15%CA%2B%FDH%CD%D7m9%ECU%A3%AB%1B%8AW%18%0A%09&peer_id=78742315344684734465&port=6881&uploaded=0&downloaded=0&left=10000&compact=1&no_peer_id=0&event=started"
+    # TODO: less hardcode
+    query = %{
+      "info_hash"  => info_hash,
+      "port"       => port,
+      "peer_id"    => 78742315344684734465,
+      "uploaded"   => 0,
+      "downloaded" => 0,
+      "event"      => "started",
+      "left"       => 10000,
+      "compact"    => 1,
+      "no_peer_id" => 0,
+      "event"      => "started"
+    } |> URI.encode_query
 
+    torrent_info["announce"] <> "?" <> query
   end
 
   defp get_body(query) do

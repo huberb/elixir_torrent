@@ -83,7 +83,7 @@ defmodule Torrent.Peer do
     << generate_peer_id() :: binary >>
   end
 
-  defp generate_peer_id do
+  def generate_peer_id do
     # TODO: generate better Peer_id
     id = "BE"
     version = "0044"
