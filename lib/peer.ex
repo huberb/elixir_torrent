@@ -11,15 +11,20 @@ defmodule Torrent.Peer do
     pid
   end
 
-  defp connect(ip, port) do
+  defp connect(ip, port, count \\ 0) do
     IO.puts "Try to connect to: " <> ip
     try do
       Socket.TCP.connect!(ip, port, [timeout: 2000]) 
     rescue
       e ->
         if e.message == "timeout" do
-          IO.puts "got a Timeout.. try again"
-          connect(ip, port)
+          IO.puts "got a Timeout on IP: " <> ip
+          if count == 5 do
+            IO.puts "fifth try on IP " <> ip <> " ... stopping now!"
+            exit(:normal)
+          else
+            connect(ip, port, count + 1)
+          end
         else
           { :error, e }
         end
@@ -27,14 +32,13 @@ defmodule Torrent.Peer do
   end
 
   def initiate_connection(socket, info_structs) do
-    socket 
-    |> say_hello(info_structs[:meta_info]) 
-    |> hear_hello
-    |> verify_checksum(info_structs[:meta_info])
+    answer = socket 
+           |> say_hello(info_structs[:meta_info]) 
+           |> hear_hello
+           |> verify_checksum(info_structs[:meta_info])
 
-    writer_process = info_structs[:writer_pid]
-
-    socket |> Torrent.Stream.leech(writer_process, info_structs[:meta_info])
+    info_structs = info_structs |> Map.put(:peer_id, answer[:peer_id])
+    socket |> Torrent.Stream.leech(info_structs)
   end
 
   def verify_checksum(answer_struct, info_hash) do
@@ -44,6 +48,7 @@ defmodule Torrent.Peer do
       exit(:wrong_checksum)
     else
       IO.puts "handshake successful"
+      answer_struct
     end
   end
 

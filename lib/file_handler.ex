@@ -2,8 +2,6 @@ defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, output_path) do
     meta_info = tracker_info["info"]
-    require IEx
-    IEx.pry
     { ok, pid } = Task.start_link(fn -> loop([], meta_info) end)
     pid
   end

@@ -1,7 +1,12 @@
 defmodule Torrent.Stream do
 
-  def leech(socket, writer_process, meta_info) do
+  def leech(socket, info_structs) do
+
     # spawn keep_alive(socket)
+    meta_info = info_structs[:meta_info]
+    writer_process = info_structs[:writer_pid]
+    peer_id = info_structs[:peer_id]
+
     bitfield = socket |> set_bitfield
 
     spawn fn() -> 
@@ -9,8 +14,8 @@ defmodule Torrent.Stream do
     end
 
     socket |> send_interested
-    |> wait_for_unchoke(0)
-    |> recv_block(writer_process, meta_info)
+           |> wait_for_unchoke(0)
+           |> recv_block(writer_process, meta_info, peer_id)
   end
 
   # some peers dont send a bitfield
@@ -65,14 +70,14 @@ defmodule Torrent.Stream do
     { id, len, payload } = socket |> recv_message
 
     if id == 1 do # unchoke
-    IO.puts "unchoke!"
-    socket
+      IO.puts "unchoke!"
+      socket
     else
       socket |> wait_for_unchoke(count + 1)
     end
   end
 
-  def recv_block(socket, write_process_pid, meta_info) do
+  def recv_block(socket, write_process_pid, meta_info, peer_id) do
     try do
       byte_length = meta_info["length"]
       len = socket |> recv_32_bit_int
@@ -80,6 +85,7 @@ defmodule Torrent.Stream do
       index = socket |> recv_32_bit_int
 
       block = %{
+        from_peer: peer_id,
         len: len,
         id: id,
         index: index,
@@ -98,7 +104,7 @@ defmodule Torrent.Stream do
       IO.puts e.message
     end
 
-    recv_block(socket, write_process_pid, meta_info)
+    recv_block(socket, write_process_pid, meta_info, peer_id)
   end
 
   def has_payload?(id) do

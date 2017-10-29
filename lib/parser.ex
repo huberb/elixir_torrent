@@ -14,7 +14,12 @@ defmodule Torrent.Parser do
 
   def parse_all_peers(peer_list) do
     # the delete_at(0) is to delete my own ip
-    peers = peer_list |> Enum.map(&parse_peer/1) |> List.delete_at(0)
+    peers = peer_list 
+            |> List.delete_at(0)
+            |> Enum.at(0)
+            |> Enum.chunk(6)
+            |> Enum.map(&parse_peer/1) 
+    peers
   end
 
   defp parse_peer(peer) do
@@ -51,8 +56,6 @@ defmodule Torrent.Parser do
     foreign_hash = block[:data] |> sha_sum
     real_hash = pieces |> binary_part(block[:index] * 20, 20)
     if foreign_hash != real_hash do
-      require IEx
-      IEx.pry
       raise "Hash Validation failed on Piece! Abort!"
     end
   end
