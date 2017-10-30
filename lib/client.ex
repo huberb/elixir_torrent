@@ -7,19 +7,24 @@ defmodule Torrent.Client do
 
     writer_pid = Torrent.Filehandler.start_link(meta_info, output_path)
 
+    info_structs = %{
+      meta_info: meta_info, 
+      writer_pid: writer_pid
+    }
+
     meta_info
     |> Torrent.Tracker.request
-    |> connect_all_peers(meta_info["info"], writer_pid)
+    |> connect_all_peers(info_structs)
   end
 
-  def connect_all_peers(tracker_resp, meta_info, writer_pid) do
+  def connect_all_peers(tracker_resp, info_structs) do
     tracker_resp["peers"]
-    |> :binary.bin_to_list
-    |> Enum.split(6)
-    |> Tuple.to_list
     |> Torrent.Parser.parse_all_peers
-    |> Enum.map(fn(p) -> connect_peer(p, meta_info, writer_pid) end)
-    |> manage_peers(writer_pid)
+    |> Enum.map(fn(p) -> 
+      Map.put(info_structs, :peer, p)
+      |> Torrent.Peer.connect
+    end)
+    |> manage_peers(info_structs[:writer_pid])
   end
 
   def manage_peers(peer_pids, writer_pid) do
@@ -37,14 +42,6 @@ defmodule Torrent.Client do
     peer_pids = List.delete(peer_pids, pid)
     len = peer_pids |> length |> to_string
     IO.puts "Number of Peers left: " <> len
-  end
-
-  def connect_peer(peer, meta_info, writer_pid) do
-    %{
-      meta_info: meta_info, 
-      peer: peer,
-      writer_pid: writer_pid
-    } |> Torrent.Peer.connect
   end
 
 end

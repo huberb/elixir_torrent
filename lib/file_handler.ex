@@ -43,8 +43,8 @@ defmodule Torrent.Filehandler do
     end
   end
 
-  defp complete?(file_data, meta_info) do
-    if length(file_data) == num_pieces(meta_info) + 1 do
+  defp complete?(file_data, info_hash) do
+    if length(file_data) == num_pieces(info_hash) + 1 do
       true
     else
       false

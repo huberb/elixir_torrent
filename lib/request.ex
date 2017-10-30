@@ -21,11 +21,12 @@ defmodule Torrent.Request do
   end
 
   def data_length(index, meta_info) do
-    num_pieces = Torrent.Filehandler.num_pieces(meta_info)
+    info_hash = meta_info["info"]
+    num_pieces = Torrent.Filehandler.num_pieces(info_hash)
     if index != num_pieces do
-      meta_info["piece length"]
+      info_hash["piece length"]
     else
-      Torrent.Filehandler.last_piece_length(meta_info)
+      Torrent.Filehandler.last_piece_length(info_hash)
     end
   end
 

@@ -1,7 +1,6 @@
 defmodule Torrent.Peer do
 
   def connect(info_structs) do 
-
     { ip, port } = info_structs[:peer]
 
     { :ok, pid } = Task.start_link fn -> 
@@ -41,8 +40,8 @@ defmodule Torrent.Peer do
     socket |> Torrent.Stream.leech(info_structs)
   end
 
-  def verify_checksum(answer_struct, info_hash) do
-    real_hash = info_hash |> Bencoder.encode |> Torrent.Parser.sha_sum
+  def verify_checksum(answer_struct, meta_info) do
+    real_hash = meta_info["info"] |> Bencoder.encode |> Torrent.Parser.sha_sum
     foreign_hash = answer_struct[:info_hash]
     if foreign_hash != real_hash do
       exit(:wrong_checksum)
@@ -52,8 +51,8 @@ defmodule Torrent.Peer do
     end
   end
 
-  def say_hello(socket, info_hash) do
-    handshake = info_hash
+  def say_hello(socket, meta_info) do
+    handshake = meta_info["info"]
                 |> Bencoder.encode
                 |> Torrent.Parser.sha_sum
                 |> generate_handshake
