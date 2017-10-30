@@ -79,16 +79,14 @@ defmodule Torrent.Stream do
 
   def recv_block(socket, write_process_pid, meta_info, peer_id) do
     try do
-      byte_length = meta_info["length"]
       len = socket |> recv_32_bit_int
       id = socket |> recv_8_bit_int
-      index = socket |> recv_32_bit_int
 
       block = %{
         from_peer: peer_id,
         len: len,
         id: id,
-        index: index,
+        index: socket |> recv_32_bit_int,
         offset: socket |> recv_32_bit_int,
         # rest of the stream is the file data,
         # there are 

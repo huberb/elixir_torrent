@@ -11,13 +11,13 @@ defmodule Torrent.Request do
 
   # TODO: move piece availability info to another process
   def send_request(socket, piece, index, meta_info) do
-    # if piece[:available] do
+    if piece[:available] do
       IO.puts "sending request for piece Nr: "
       IO.puts index
       request = request_query(index, meta_info)
 
       socket |> Socket.Stream.send!(request)
-    # end
+    end
   end
 
   def data_length(index, meta_info) do

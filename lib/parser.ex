@@ -19,7 +19,9 @@ defmodule Torrent.Parser do
             |> Enum.at(0)
             |> Enum.chunk(6)
             |> Enum.map(&parse_peer/1) 
-    peers
+
+    # this is a development hack to debug one single peer
+    [ peers |> Enum.at(0) ]
   end
 
   defp parse_peer(peer) do
@@ -28,8 +30,9 @@ defmodule Torrent.Parser do
          |> Enum.take(4) 
          |> Enum.join(".")
 
-         # Byte 4 and 5 are the Port, 
-         # this needs to be read as a 2 Byte Integer
+    # Byte 4 and 5 are the Port, 
+    # this needs to be read as a 2 Byte Integer
+    # TODO: use kernel methods here
     port = [ Enum.at(peer, 4), Enum.at(peer, 5) ] 
            |> parse_port
 
@@ -59,7 +62,6 @@ defmodule Torrent.Parser do
       raise "Hash Validation failed on Piece! Abort!"
     end
   end
-
 
   def piece_struct(char) do
     case char do
