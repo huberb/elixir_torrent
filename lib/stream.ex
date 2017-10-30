@@ -1,35 +1,8 @@
 defmodule Torrent.Stream do
 
   def leech(socket, info_structs) do
-
-    # spawn keep_alive(socket)
-    meta_info = info_structs[:meta_info]
-    writer_process = info_structs[:writer_pid]
-    peer_id = info_structs[:peer_id]
-
-    bitfield = socket |> set_bitfield
-
-    spawn fn() -> 
-      Torrent.Request.request_all(socket, bitfield, meta_info) 
-    end
-
     socket |> send_interested
-           |> wait_for_unchoke(0)
-           |> recv_block(writer_process, meta_info, peer_id)
-  end
-
-  # some peers dont send a bitfield
-  # TODO: handle this
-  def set_bitfield(socket) do
-    IO.puts "setting bitfield"
-    { id, len, payload } = socket |> recv_message
-
-    if id == 5 do # bitfield flag set
-    IO.puts "got a valid Bitfield Flag."
-    payload
-    else
-      exit(:no_bitfield)
-    end
+           |> pipe_message(info_structs)
   end
 
   def send_interested(socket) do
@@ -40,94 +13,87 @@ defmodule Torrent.Stream do
     socket
   end
 
-  # TODO: use this
-  def keep_alive(socket) do
-    try do
-      IO.puts "send keep_alive"
-      message = [0,0,0,0] |> :binary.list_to_bin
-      socket |> Socket.Stream.send!(message)
-      :timer.sleep(5000)
-      keep_alive(socket)
-    rescue
-      e -> IO.puts(e.message)
+  def piece(socket, len, info_structs) do
+    meta_info = info_structs[:meta_info]
+    writer_process = info_structs[:writer_pid]
+    peer_id = info_structs[:peer_id]
+
+    block = %{
+      from_peer: peer_id,
+      len: len,
+      index: socket |> recv_32_bit_int,
+      offset: socket |> recv_32_bit_int,
+      data: socket |> recv_byte!(len - 9)
+    }
+
+    Torrent.Parser.validate_data(meta_info["pieces"], block)
+
+    send writer_process, { :put, block }
+  end
+
+  def bitfield(socket, len, info_structs) do
+    meta_info = info_structs[:meta_info]
+    { ok, message } = socket |> recv_byte(len - 1)
+    if ok == :ok do
+      Torrent.Request.request_all(socket, message, meta_info)
     end
   end
 
-  def recv_message(socket) do
+  def have(socket, len, info_structs) do
+    message = socket |> recv_byte(len - 1)
+    # TODO: request here
+  end
+
+  def pipe_message(socket, info_structs) do
+    meta_info = info_structs[:meta_info]
+    writer_process = info_structs[:writer_pid]
+    peer_id = info_structs[:peer_id]
+
     len = socket |> recv_32_bit_int
-    id = recv_8_bit_int(socket)
-    payload = nil
+    id = socket |> recv_8_bit_int
 
-    if id |> has_payload? do
-      payload = socket |> recv_byte(len - 1)
+    case id do
+      0 ->
+        IO.puts "got a unchoke message"
+      1 ->
+        IO.puts "got a choke message"
+      2 ->
+        IO.puts "got a interested message"
+      3 ->
+        IO.puts "got a uninterested message"
+      4 ->
+        IO.puts "got a have message"
+        have(socket, len, info_structs)
+      5 ->
+        IO.puts "got a bitfield message"
+        bitfield(socket, len, info_structs)
+      6 ->
+        IO.puts "got a request message"
+      7 ->
+        IO.puts "got a piece message"
+        piece(socket, len, info_structs)
+      8 ->
+        IO.puts "got a cancel message"
     end
 
-    { id, len, payload }
+    pipe_message(socket, info_structs)
   end
 
-  def wait_for_unchoke(socket, count) do
-    IO.puts "got #{count} chokes"
-    { id, len, payload } = socket |> recv_message
-
-    if id == 1 do # unchoke
-      IO.puts "unchoke!"
-      socket
-    else
-      socket |> wait_for_unchoke(count + 1)
-    end
+  def recv_8_bit_int(socket) do 
+    socket |> recv_byte!(1) |> :binary.bin_to_list |> Enum.at(0) 
   end
 
-  def recv_block(socket, write_process_pid, meta_info, peer_id) do
-    try do
-      len = socket |> recv_32_bit_int
-      id = socket |> recv_8_bit_int
-
-      block = %{
-        from_peer: peer_id,
-        len: len,
-        id: id,
-        index: socket |> recv_32_bit_int,
-        offset: socket |> recv_32_bit_int,
-        # rest of the stream is the file data,
-        # there are 
-        # len - size(id) - size(index) - size(offset)
-        # bytes left
-        data: socket |> recv_byte(len - 9)
-      }
-
-      Torrent.Parser.validate_data(meta_info["pieces"], block)
-
-      send write_process_pid, { :put, block }
-    rescue e ->
-      IO.puts e.message
-    end
-
-    recv_block(socket, write_process_pid, meta_info, peer_id)
+  def recv_32_bit_int(socket) do
+    socket |> recv_byte!(4) |> :binary.decode_unsigned
   end
 
-  def has_payload?(id) do
-    if id in [4, 5, 6, 7, 8, 9] do
-      true
-    else
-      false
-    end
+  def recv_byte!(socket, count) do
+    { ok, message } = socket |> Socket.Stream.recv(count)
+    message
   end
 
   def recv_byte(socket, count) do
     { ok, message } = socket |> Socket.Stream.recv(count)
-    if message == nil do
-      IO.puts "connection closed"
-      exit(:normal)
-    end
-    message
+    { ok, message }
   end
-
-  def recv_8_bit_int(socket) do 
-    socket |> recv_byte(1) |> :binary.bin_to_list |> Enum.at(0) 
-  end
-
-  def recv_32_bit_int(socket) do
-    socket |> recv_byte(4) |> :binary.decode_unsigned
-  end
-
 end
