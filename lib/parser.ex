@@ -23,8 +23,8 @@ defmodule Torrent.Parser do
             |> Enum.chunk(6)
             |> Enum.map(&parse_peer/1) 
 
-    # this is a development hack to debug one single peer
-    [ peers |> Enum.at(0) ]
+    # this is a development hack to debug a low number of peers
+    peers |> Enum.take(4)
   end
 
   defp parse_peer(peer) do

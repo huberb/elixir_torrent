@@ -41,23 +41,16 @@ defmodule Torrent.Stream do
     index = socket |> recv_32_bit_int
     peer_list = info_structs[:peer_list] 
                 |> Map.update!(index, fn(i) -> i = 1 end)
-
-    # send info_structs[:writer_pid], { :get, index, self() }
-    # receive do nil ->
-    # Torrent.Request.send_request(socket, index, meta_info)
-    # end
     pipe_message(socket, Map.update!(info_structs, :peer_list, fn(l) -> l = peer_list end))
   end
 
   def unchoke(socket, len, info_structs) do
+    # start requesting all we know
     Torrent.Request.request_all(socket, info_structs[:peer_list], info_structs[:meta_info])
+    pipe_message(socket, info_structs)
   end
 
   def pipe_message(socket, info_structs) do
-    meta_info = info_structs[:meta_info]
-    writer_process = info_structs[:writer_pid]
-    peer_id = info_structs[:peer_id]
-
     len = socket |> recv_32_bit_int
     id = socket |> recv_8_bit_int
 
