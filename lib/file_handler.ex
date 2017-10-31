@@ -14,14 +14,13 @@ defmodule Torrent.Filehandler do
         send caller, file_data[index]
         loop(file_data, count)
 
-      {:put, block, index} ->
-        IO.puts "Filehandler recieved data block"
-        IO.inspect block
+      {:put, block, index, offset} ->
+        IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
         if complete?(count) do
           write_file(file_data, count)
         else
           loop(
-            file_data |> Map.put(index, block),
+            file_data |> Map.put({ index, offset }, block),
             count |> Map.update!(:have, fn i -> i + 1 end)
           )
         end

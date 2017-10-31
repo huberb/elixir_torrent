@@ -1,5 +1,5 @@
 defmodule Torrent.Request do
-  @data_request_len 16834 # 2^14 is a common size
+  @data_request_len 16384 # 2^14 is a common size
 
   def request_all(socket, peer_list, meta_info) do
     spawn fn() -> 
