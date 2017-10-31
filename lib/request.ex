@@ -1,21 +1,31 @@
 defmodule Torrent.Request do
+  @data_request_len 16834 # 2^14 is a common size
 
   def request_all(socket, peer_list, meta_info) do
     spawn fn() -> 
       for { key, val } <- peer_list do
-        if key == 1 && val == 1 do
-          send_request(socket, key, meta_info)
-          # :timer.sleep(1000)
+        if val == 1 do
+          len = data_length(key, meta_info)
+          send_piece_request(socket, key, 0, len, meta_info)
+          # :timer.sleep(500)
         end
       end
     end
   end
 
-  def send_request(socket, index, meta_info) do
-    IO.puts "sending request for piece Nr: "
-    IO.puts index
-    request = request_query(index, meta_info)
+  def send_piece_request(socket, index, offset, len, meta_info) do
+    if offset + @data_request_len < len do
+      new_offset = offset + @data_request_len
+      send_block_request(socket, index, offset, meta_info)
+      send_piece_request(socket, index, new_offset, len, meta_info)
+    else
+      send_block_request(socket, index, offset, meta_info)
+    end
+  end
 
+  def send_block_request(socket, index, offset, meta_info) do
+    IO.puts "send request index: #{index}, offset: #{offset}"
+    request = request_query(index, offset, meta_info)
     socket |> Socket.Stream.send!(request)
   end
 
@@ -27,20 +37,17 @@ defmodule Torrent.Request do
     else
       Torrent.Filehandler.last_piece_length(info_hash)
     end
-    #test
-    16384
   end
 
-  def request_query(index, meta_info) do
+  def request_query(index, offset, meta_info) do
     request_length = 13
     id = 6
 
-    # TODO: dont hardcode offset
-    << request_length :: 32 >> <> # length
-    << id :: 8 >> <> # id
-    << index :: 32 >> <> # index
-    << 0 :: 32 >> <> # offset
-    << data_length(index, meta_info) :: 32 >> # length
+    << request_length :: 32 >> <>
+    << id :: 8 >> <>
+    << index :: 32 >> <>
+    << offset :: 32 >> <>
+    << data_length(index, meta_info) :: 32 >>
   end
 
 end

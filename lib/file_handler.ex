@@ -10,12 +10,12 @@ defmodule Torrent.Filehandler do
 
   defp loop(file_data, count) do
     receive do
-      {:get, index, caller} ->
+      {:get, caller, index} ->
         send caller, file_data[index]
         loop(file_data, count)
 
       {:put, block, index} ->
-        IO.puts "Filehandler recvieved data block"
+        IO.puts "Filehandler recieved data block"
         IO.inspect block
         if complete?(count) do
           write_file(file_data, count)

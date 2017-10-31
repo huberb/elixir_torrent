@@ -23,7 +23,7 @@ defmodule Torrent.Stream do
       data: socket |> recv_byte!(len - 9)
     }
 
-    Torrent.Parser.validate_data(info_hash["pieces"], index, block)
+    # Torrent.Parser.validate_data(info_hash["pieces"], index, block)
     send info_structs[:writer_pid], { :put, block, index }
     pipe_message(socket, info_structs)
   end
