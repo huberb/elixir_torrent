@@ -14,17 +14,16 @@ defmodule Torrent.Stream do
   end
 
   def piece(socket, len, info_structs) do
-    info_hash = info_structs[:meta_info]["info"]
     index = socket |> recv_32_bit_int
+    offset = socket |> recv_32_bit_int
+
     block = %{
       from_peer: info_structs[:peer_id],
       len: len,
-      offset: socket |> recv_32_bit_int,
       data: socket |> recv_byte!(len - 9)
     }
 
-    # Torrent.Parser.validate_data(info_hash["pieces"], index, block)
-    send info_structs[:writer_pid], { :put, block, index }
+    send info_structs[:writer_pid], { :put, block, index, offset }
     pipe_message(socket, info_structs)
   end
 
