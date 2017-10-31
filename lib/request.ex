@@ -1,9 +1,12 @@
 defmodule Torrent.Request do
 
   def request_all(socket, peer_list, meta_info) do
-    for { key, val } <- peer_list do
-      if val == 1 do
-        send_request(socket, key, meta_info)
+    spawn fn() -> 
+      for { key, val } <- peer_list do
+        if key == 1 && val == 1 do
+          send_request(socket, key, meta_info)
+          # :timer.sleep(1000)
+        end
       end
     end
   end
@@ -16,16 +19,6 @@ defmodule Torrent.Request do
     socket |> Socket.Stream.send!(request)
   end
 
-  def send_request(socket, piece, index, meta_info) do
-    if piece[:available] do
-      IO.puts "sending request for piece Nr: "
-      IO.puts index
-      request = request_query(index, meta_info)
-
-      socket |> Socket.Stream.send!(request)
-    end
-  end
-
   def data_length(index, meta_info) do
     info_hash = meta_info["info"]
     num_pieces = Torrent.Filehandler.num_pieces(info_hash)
@@ -34,6 +27,8 @@ defmodule Torrent.Request do
     else
       Torrent.Filehandler.last_piece_length(info_hash)
     end
+    #test
+    16384
   end
 
   def request_query(index, meta_info) do

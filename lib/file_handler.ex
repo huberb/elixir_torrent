@@ -2,7 +2,9 @@ defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, output_path) do
     meta_info = tracker_info["info"]
-    { ok, pid } = Task.start_link(fn -> loop(%{}, %{have: 0, need: num_pieces(meta_info)}) end)
+    { ok, pid } = Task.start_link(fn -> 
+      loop(%{}, %{have: 0, need: num_pieces(meta_info)}) 
+    end)
     pid
   end
 
