@@ -1,12 +1,13 @@
 defmodule Torrent.Filehandler do
 
-  def start_link(tracker_info, output_path) do
+  def start_link(tracker_info, requester_pid, output_path) do
     meta_info = tracker_info["info"]
     file_info = %{
       have: 0,
       pieces_needed: num_pieces(meta_info), 
       blocks_needed: num_blocks(meta_info),
-      piece_info: meta_info["pieces"]
+      piece_info: meta_info["pieces"],
+      requester_pid: requester_pid
     }
 
     { ok, pid } = Task.start_link(fn -> 
@@ -23,6 +24,8 @@ defmodule Torrent.Filehandler do
 
       {:put, block, index, offset} ->
         IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
+        send file_info[:requester_pid],
+          { :received, index, offset }
         if download_complete?(file_info) do
           write_file(file_data, file_info)
         else

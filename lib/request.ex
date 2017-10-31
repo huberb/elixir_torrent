@@ -1,6 +1,7 @@
 defmodule Torrent.Request do
-  # @data_request_len 16384 # 2^14 is a common size
-  @data_request_len 8192 # 2^13 for simple offset tests
+  @data_request_len 16384 # 2^14 is a common size
+  # @data_request_len 8192 # 2^13 for simple offset tests
+  @max_piece_req 10 
 
   def start_link(meta_info) do
     { ok, pid } = Task.start_link(fn ->
@@ -13,12 +14,12 @@ defmodule Torrent.Request do
 
       offset_struct = 
         0..num_blocks 
-        |> Enum.map(fn(offset) -> { offset, :pending } end)
+        |> Enum.map(fn(offset) -> { offset * data_request_len, :pending } end)
         |> Map.new
 
       piece_struct =
         0..num_pieces
-        |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], offset: offset_struct }} end)
+        |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], offset: offset_struct } } end)
         |> Map.new
 
       manage_requests(piece_struct, %{}, meta_info)
@@ -38,34 +39,39 @@ defmodule Torrent.Request do
 
       { :state, peer_id, state } ->
         peer_struct = peer_struct |> update_peer_struct(peer_id, state)
-        piece_struct 
-        |> request(peer_struct, meta_info, 0)
-        |> manage_requests(peer_struct, meta_info)
+        piece_struct = piece_struct |> request(peer_struct, meta_info, 0, @max_piece_req)
+        manage_requests(piece_struct, peer_struct, meta_info)
+
+      { :received, index, offset } ->
+        piece_struct = put_in(piece_struct, [index, :offset, offset], :received)
+        manage_requests(piece_struct, peer_struct, meta_info)
     end
   end
 
-  def next_request(piece_struct, peer_struct, meta_info, index) do
-    if index <= meta_info[:num_pieces] do
-      request(piece_struct, peer_struct, meta_info, index + 1)
-    end
-  end
-
-  def request(piece_struct, peer_struct, meta_info, index) do
-    piece = piece_struct[index]
-    if piece[:state] == :pending && length(piece[:peers]) > 0 do
-      peer_id = piece[:peers] |> Enum.at(0)
-      peer = peer_struct[peer_id]
-      if peer[:state] == :unchoke do
-        block_len = data_length(index, meta_info)
-        send_piece_request(peer[:socket], index, 0, block_len)
-        next_request(
-          piece_struct |> put_in([index, :state], :requested), 
-          peer_struct, meta_info, index + 1
-        )
+  def request(piece_struct, peer_struct, meta_info, index, max) do
+    if index == max do
+      piece_struct
+    else
+      piece = piece_struct[index]
+      if piece[:state] == :pending && length(piece[:peers]) > 0 do
+        # TODO: better way to choose peer
+        peer_id = piece[:peers] |> Enum.at(0)
+        peer = peer_struct[peer_id]
+        if peer[:state] == :unchoke do
+          block_len = data_length(index, meta_info)
+          send_piece_request(peer[:socket], index, 0, block_len)
+          IO.puts "send request index: #{index}"
+          piece_struct = put_in(piece_struct, [index, :state], :requested)
+          request(piece_struct, peer_struct, meta_info, index + 1, max)
+        else
+          IO.puts "skipped request index: #{index} because of choke"
+          request(piece_struct, peer_struct, meta_info, index + 1, max)
+        end
+      else
+        IO.puts "skipped request index: #{index} with state #{piece[:state]}"
+        request(piece_struct, peer_struct, meta_info, index + 1, max)
       end
-      next_request(piece_struct, peer_struct, meta_info, index)
     end
-    next_request(piece_struct, peer_struct, meta_info, index)
   end
 
   def update_peer_struct(peer_struct, id, state) when state |> is_atom do
@@ -81,12 +87,12 @@ defmodule Torrent.Request do
     end
   end
 
-  def update_piece_struct(piece_struct, peer, index) when index |> is_integer do 
+  def update_piece_struct(piece_struct, peer, index) do
     peer_list = piece_struct[index][:peers] ++ [peer]
     put_in(piece_struct, [index, :peers], peer_list)
   end
 
-  def update_piece_struct(piece_struct, peer, bitfield, bit_index) when bitfield |> is_list do
+  def update_piece_struct(piece_struct, peer, bitfield, bit_index) do
     if bit_index == length(bitfield) do
       piece_struct
     else
@@ -107,17 +113,14 @@ defmodule Torrent.Request do
   end
 
   def send_piece_request(socket, index, offset, len) do
+    send_block_request(socket, index, offset)
     if offset + @data_request_len < len do
       new_offset = offset + @data_request_len
-      send_block_request(socket, index, offset)
       send_piece_request(socket, index, new_offset, len)
-    else
-      send_block_request(socket, index, offset)
     end
   end
 
   def send_block_request(socket, index, offset) do
-    IO.puts "send request index: #{index}, offset: #{offset}"
     request = request_query(index, offset)
     socket |> Socket.Stream.send!(request)
   end

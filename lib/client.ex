@@ -5,8 +5,8 @@ defmodule Torrent.Client do
     meta_info = torrent_path
                 |> Torrent.Parser.parse_file
 
-    writer_pid = Torrent.Filehandler.start_link(meta_info, output_path)
     requester_pid = Torrent.Request.start_link(meta_info)
+    writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, output_path)
 
     info_structs = %{
       meta_info: meta_info, 
