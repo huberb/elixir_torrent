@@ -55,11 +55,11 @@ defmodule Torrent.Parser do
     |> Enum.map(&make_len_8/1)
     |> Enum.join("")
     |> String.graphemes
-    |> Enum.with_index
-    |> Enum.reduce(%{}, 
-       fn({value, index}, acc) -> 
-         Map.put(acc, index, String.to_integer(value))
-       end)
+    # |> Enum.with_index
+    # |> Enum.reduce(%{}, 
+    # fn({value, index}, acc) -> 
+    # Map.put(acc, index, String.to_integer(value))
+    # end)
   end
 
   def validate_block(pieces, index, data) do

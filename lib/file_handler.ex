@@ -2,15 +2,15 @@ defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, output_path) do
     meta_info = tracker_info["info"]
+    file_info = %{
+      have: 0,
+      pieces_needed: num_pieces(meta_info), 
+      blocks_needed: num_blocks(meta_info),
+      piece_info: meta_info["pieces"]
+    }
+
     { ok, pid } = Task.start_link(fn -> 
-      manage_files( 
-        %{}, 
-        %{
-          have: 0, 
-          pieces_needed: num_pieces(meta_info), 
-          blocks_needed: num_blocks(meta_info),
-          piece_info: meta_info["pieces"]
-        })
+      manage_files( %{}, file_info )
     end)
     pid
   end
@@ -35,11 +35,14 @@ defmodule Torrent.Filehandler do
   end
 
   def add_block(file_data, index, offset, block) do
-    if file_data[index] == nil do
-      file_data = file_data |> Map.put(index, %{})
-    end
-    file_data = put_in(file_data, [index, offset], block)
-    file_data
+    file_data = 
+      case file_data[index] do
+        nil ->
+          file_data |> Map.put(index, %{})
+        _ ->
+          file_data
+      end
+    put_in(file_data, [index, offset], block)
   end
 
   def verify_piece(file_data, index, file_info) do
@@ -50,7 +53,7 @@ defmodule Torrent.Filehandler do
              |> Enum.sort_by(fn({offset, block}) -> offset end)
              |> Enum.map(fn({offset, block}) -> block[:data] end)
              |> Enum.join("")
-      Torrent.Parser.validate_block(file_info[:piece_info], index, data)
+             Torrent.Parser.validate_block(file_info[:piece_info], index, data)
     end
     file_data
   end

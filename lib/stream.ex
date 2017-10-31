@@ -1,5 +1,17 @@
 defmodule Torrent.Stream do
 
+  @message_flags [
+    :choke, 
+    :unchoke, 
+    :interested, 
+    :uninterested, 
+    :have, 
+    :bitfield, 
+    :request, 
+    :piece, 
+    :cancel 
+  ]
+
   def leech(socket, info_structs) do
     socket |> send_interested
     |> pipe_message(info_structs)
@@ -28,58 +40,56 @@ defmodule Torrent.Stream do
   end
 
   def bitfield(socket, len, info_structs) do
-    peer_list = socket 
+    piece_list = socket 
                 |> recv_byte!(len - 1) 
                 |> Torrent.Parser.parse_bitfield
-    pipe_message(socket, Map.put(info_structs, :peer_list, peer_list))
+
+    send info_structs[:requester_pid], 
+      { :bitfield, info_structs[:peer_id], socket, piece_list }
+
+    pipe_message(socket, Map.put(info_structs, :piece_list, piece_list))
   end
 
   def have(socket, info_structs) do
     # this is always 4 byte
-    meta_info = info_structs[:meta_info]
     index = socket |> recv_32_bit_int
-    peer_list = info_structs[:peer_list] 
-                |> Map.update!(index, fn(i) -> i = 1 end)
-    pipe_message(socket, Map.update!(info_structs, :peer_list, fn(l) -> l = peer_list end))
+    piece_list = info_structs[:piece_list] 
+                |> List.update_at(index, fn(i) -> i = 1 end)
+    pipe_message(socket, Map.update!(info_structs, :piece_list, fn(l) -> l = piece_list end))
   end
 
   def unchoke(socket, len, info_structs) do
-    # start requesting all we know
-    Torrent.Request.request_all(socket, info_structs[:peer_list], info_structs[:meta_info])
+
+    send info_structs[:requester_pid],
+      { :state, info_structs[:peer_id], :unchoke }
+
     pipe_message(socket, info_structs)
   end
 
   def pipe_message(socket, info_structs) do
     len = socket |> recv_32_bit_int
     id = socket |> recv_8_bit_int
+    flag = @message_flags |> Enum.at(id)
 
-    case id do
-      0 ->
-        IO.puts "got a choke message"
+    IO.puts "got a #{flag} message"
+    case flag do
+      :choke ->
         pipe_message(socket, info_structs)
-      1 ->
-        IO.puts "got a unchoke message"
+      :unchoke ->
         unchoke(socket, len, info_structs)
-      2 ->
-        IO.puts "got a interested message"
+      :interested ->
         pipe_message(socket, info_structs)
-      3 ->
-        IO.puts "got a uninterested message"
+      :uninterested ->
         pipe_message(socket, info_structs)
-      4 ->
-        IO.puts "got a have message"
+      :have ->
         have(socket, info_structs)
-      5 ->
-        IO.puts "got a bitfield message"
+      :bitfield ->
         bitfield(socket, len, info_structs)
-      6 ->
-        IO.puts "got a request message"
+      :request ->
         pipe_message(socket, info_structs)
-      7 ->
-        IO.puts "got a piece message"
+      :piece ->
         piece(socket, len, info_structs)
-      8 ->
-        IO.puts "got a cancel message"
+      :cancel ->
         pipe_message(socket, info_structs)
     end
   end
@@ -97,8 +107,4 @@ defmodule Torrent.Stream do
     message
   end
 
-  def recv_byte(socket, count) do
-    { ok, message } = socket |> Socket.Stream.recv(count)
-    { ok, message }
-  end
 end
