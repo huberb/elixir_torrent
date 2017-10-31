@@ -1,12 +1,11 @@
 defmodule Torrent.Request do
 
-  def request_all(socket, bitfield, meta_info) do
-    bitfield 
-    |> Torrent.Parser.parse_bitfield
-    |> Enum.with_index
-    |> Enum.each(fn({piece, index}) -> 
-      send_request(socket, piece, index, meta_info)
-    end)
+  def request_all(socket, peer_list, meta_info) do
+    for { key, val } <- peer_list do
+      if val == 1 do
+        send_request(socket, key, meta_info)
+      end
+    end
   end
 
   def send_request(socket, index, meta_info) do
