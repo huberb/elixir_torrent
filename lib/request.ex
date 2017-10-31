@@ -1,10 +1,15 @@
 defmodule Torrent.Request do
-  @data_request_len 16384 # 2^14 is a common size
+  # @data_request_len 16384 # 2^14 is a common size
+  @data_request_len 8192 # 2^13 for simple offset tests
+
+  def data_request_len do
+    @data_request_len
+  end
 
   def request_all(socket, peer_list, meta_info) do
     spawn fn() -> 
       for { key, val } <- peer_list do
-        if key == 1 && val == 1 do
+        if val == 1 do
           len = data_length(key, meta_info)
           send_piece_request(socket, key, 0, len, meta_info)
           # :timer.sleep(500)

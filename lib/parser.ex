@@ -62,18 +62,13 @@ defmodule Torrent.Parser do
        end)
   end
 
-  def validate_data(pieces, index, block) do
-    foreign_hash = block[:data] |> sha_sum
+  def validate_block(pieces, index, data) do
+    foreign_hash = data |> sha_sum
     real_hash = pieces |> binary_part(index * 20, 20)
     if foreign_hash != real_hash do
       raise "Hash Validation failed on Piece! Abort!"
-    end
-  end
-
-  def piece_struct(char) do
-    case char do
-      "0" -> %{ available: false, pending: false }
-      "1" -> %{ available: true, pending: true }
+    else
+      IO.puts "validated piece Nr: #{index}"
     end
   end
 

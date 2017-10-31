@@ -25,7 +25,7 @@ defmodule Torrent.Peer do
             connect(ip, port, count + 1)
           end
         else
-          { :error, e }
+          exit(:normal)
         end
     end
   end
