@@ -55,7 +55,11 @@ defmodule Torrent.Parser do
     |> Enum.map(&make_len_8/1)
     |> Enum.join("")
     |> String.graphemes
-    |> Enum.map(&piece_struct/1)
+    |> Enum.with_index
+    |> Enum.reduce(%{}, 
+       fn({value, index}, acc) -> 
+         Map.put(acc, index, String.to_integer(value))
+       end)
   end
 
   def validate_data(pieces, index, block) do
