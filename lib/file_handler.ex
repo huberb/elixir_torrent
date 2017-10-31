@@ -81,7 +81,7 @@ defmodule Torrent.Filehandler do
 
   def num_blocks(meta_info) do
     len = Torrent.Request.data_request_len
-    meta_info["piece length"] / len
+    meta_info["piece length"] / len |> round
   end
 
   def num_pieces(meta_info) do

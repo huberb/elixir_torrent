@@ -3,52 +3,69 @@ defmodule Torrent.Request do
   @data_request_len 8192 # 2^13 for simple offset tests
 
   def start_link(meta_info) do
-    num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
-    piece_list = 0..num_pieces
-                 |> Enum.map(fn(i) -> %{ state: :pending, peers: [] } end)
-
-    meta_info |> Map.put(:num_pieces, num_pieces)
-
     { ok, pid } = Task.start_link(fn ->
-      manage_requests(piece_list, %{}, meta_info)
+
+      num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
+      num_blocks = Torrent.Filehandler.num_blocks(meta_info["info"])
+
+      meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
+      meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
+
+      offset_struct = 
+        0..num_blocks 
+        |> Enum.map(fn(offset) -> { offset, :pending } end)
+        |> Map.new
+
+      piece_struct =
+        0..num_pieces
+        |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], offset: offset_struct }} end)
+        |> Map.new
+
+      manage_requests(piece_struct, %{}, meta_info)
     end)
     pid
   end
 
-  def manage_requests(piece_list, peer_struct, meta_info) do
+  def manage_requests(piece_struct, peer_struct, meta_info) do
     receive do
       { :bitfield, peer_id, socket, bitfield } ->
         peer_struct = peer_struct |> update_peer_struct(peer_id, socket)
-        piece_list = piece_list |> update_piece_list(peer_id, bitfield)
-        manage_requests(piece_list, peer_struct, meta_info)
+        piece_struct = piece_struct |> update_piece_struct(peer_id, bitfield, 0)
+        manage_requests(piece_struct, peer_struct, meta_info)
 
       { :piece, peer, socket, index } ->
-        manage_requests(piece_list, peer_struct, meta_info)
+        manage_requests(piece_struct, peer_struct, meta_info)
 
       { :state, peer_id, state } ->
         peer_struct = peer_struct |> update_peer_struct(peer_id, state)
-        piece_list 
-        |> request(peer_struct, meta_info)
+        piece_struct 
+        |> request(peer_struct, meta_info, 0)
         |> manage_requests(peer_struct, meta_info)
     end
   end
 
-  def request(piece_list, peer_struct, meta_info) do
-    piece_list |> Enum.take(1) |> Enum.with_index |> Enum.map(fn({piece, index}) -> 
-      if piece[:state] == :pending do
-        peer_id = piece[:peers] |> Enum.at(0)
-        socket = peer_struct[peer_id][:socket]
-        state = peer_struct[peer_id][:state]
-        if state == :unchoke do
-          len = data_length(index, meta_info)
-          send_piece_request(socket, index, 0, len)
-          piece |> Map.update!(:state, fn(i) -> :requested end)
-        else
-          piece
-        end
-        piece
+  def next_request(piece_struct, peer_struct, meta_info, index) do
+    if index <= meta_info[:num_pieces] do
+      request(piece_struct, peer_struct, meta_info, index + 1)
+    end
+  end
+
+  def request(piece_struct, peer_struct, meta_info, index) do
+    piece = piece_struct[index]
+    if piece[:state] == :pending && length(piece[:peers]) > 0 do
+      peer_id = piece[:peers] |> Enum.at(0)
+      peer = peer_struct[peer_id]
+      if peer[:state] == :unchoke do
+        block_len = data_length(index, meta_info)
+        send_piece_request(peer[:socket], index, 0, block_len)
+        next_request(
+          piece_struct |> put_in([index, :state], :requested), 
+          peer_struct, meta_info, index + 1
+        )
       end
-    end)
+      next_request(piece_struct, peer_struct, meta_info, index)
+    end
+    next_request(piece_struct, peer_struct, meta_info, index)
   end
 
   def update_peer_struct(peer_struct, id, state) when state |> is_atom do
@@ -64,37 +81,29 @@ defmodule Torrent.Request do
     end
   end
 
-  def update_piece_list(piece_list, peer, index) when index |> is_integer do 
-    piece_list 
-    |> Enum.at(index) 
-    |> Map.update!(:peers, fn(list) -> list ++ [peer] end)
+  def update_piece_struct(piece_struct, peer, index) when index |> is_integer do 
+    peer_list = piece_struct[index][:peers] ++ [peer]
+    put_in(piece_struct, [index, :peers], peer_list)
   end
 
-  def update_piece_list(piece_list, peer, bitfield) when bitfield |> is_list do
-    bitfield 
-    |> Enum.with_index 
-    |> Enum.map(
-      fn({value, index}) -> 
-        if value == "1" do
-          update_piece_list(piece_list, peer, index)
-        end
-      end)
+  def update_piece_struct(piece_struct, peer, bitfield, bit_index) when bitfield |> is_list do
+    if bit_index == length(bitfield) do
+      piece_struct
+    else
+      case bitfield |> Enum.at(bit_index) do
+        "1" ->
+          piece_struct 
+          |> update_piece_struct(peer, bit_index)
+          |> update_piece_struct(peer, bitfield, bit_index + 1)
+        "0" ->
+          piece_struct 
+          |> update_piece_struct(peer, bitfield, bit_index + 1)
+      end
+    end
   end
 
   def data_request_len do
     @data_request_len
-  end
-
-  def request_all(socket, piece_list, meta_info) do
-    spawn fn() -> 
-      for { index, available } <- piece_list do
-        if index == 1 && available == 1 do
-          len = data_length(index, meta_info)
-          send_piece_request(socket, index, 0, len)
-          # :timer.sleep(500)
-        end
-      end
-    end
   end
 
   def send_piece_request(socket, index, offset, len) do
@@ -128,10 +137,10 @@ defmodule Torrent.Request do
     id = 6
 
     << request_length :: 32 >> <>
-      << id :: 8 >> <>
-        << index :: 32 >> <>
-          << offset :: 32 >> <>
-            << @data_request_len :: 32 >>
+    << id :: 8 >> <>
+    << index :: 32 >> <>
+    << offset :: 32 >> <>
+    << @data_request_len :: 32 >>
   end
 
 end
