@@ -9,7 +9,14 @@ defmodule Torrent.Request do
     end)
   end
 
-  # TODO: move piece availability info to another process
+  def send_request(socket, index, meta_info) do
+    IO.puts "sending request for piece Nr: "
+    IO.puts index
+    request = request_query(index, meta_info)
+
+    socket |> Socket.Stream.send!(request)
+  end
+
   def send_request(socket, piece, index, meta_info) do
     if piece[:available] do
       IO.puts "sending request for piece Nr: "

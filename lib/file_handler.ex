@@ -2,26 +2,37 @@ defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, output_path) do
     meta_info = tracker_info["info"]
-    { ok, pid } = Task.start_link(fn -> loop([], meta_info) end)
+    { ok, pid } = Task.start_link(fn -> loop(%{}, %{have: 0, need: num_pieces(meta_info)}) end)
     pid
   end
 
-  defp loop(file_data, meta_info) do
-    if complete?(file_data, meta_info) do
-      IO.puts "file download complete"
-      write_file(file_data, meta_info)
-    end
-
+  defp loop(file_data, count) do
     receive do
-      {:put, block} ->
+      {:get, index, caller} ->
+        send caller, file_data[index]
+        loop(file_data, count)
+
+      {:put, block, index} ->
         IO.puts "Filehandler recvieved data block"
         IO.inspect block
-        loop(file_data ++ [block], meta_info)
+        if complete?(count) do
+          write_file(file_data, count)
+        else
+          loop(
+            file_data |> Map.put(index, block),
+            count |> Map.update!(:have, fn i -> i + 1 end)
+          )
+        end
     end
   end
 
+  def write_file(file_data, count) do
+    require IEx
+    IEx.pry
+  end
+
   # TODO: write the file while downloading
-  def write_file(file_data, meta_info) do
+  def write_file2(file_data, meta_info) do
     mkdir_tmp
     file_path = "tmp/file.jpg"
     File.rm_rf! file_path
@@ -43,8 +54,9 @@ defmodule Torrent.Filehandler do
     end
   end
 
-  defp complete?(file_data, info_hash) do
-    if length(file_data) == num_pieces(info_hash) + 1 do
+  defp complete?(count) do
+    IO.puts "got #{count[:have]} from #{count[:need]}"
+    if count[:need] == count[:have] do
       true
     else
       false

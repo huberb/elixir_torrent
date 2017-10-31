@@ -16,29 +16,38 @@ defmodule Torrent.Stream do
   def piece(socket, len, info_structs) do
     info_hash = info_structs[:meta_info]["info"]
 
+    index = socket |> recv_32_bit_int
+
     block = %{
       from_peer: info_structs[:peer_id],
       len: len,
-      index: socket |> recv_32_bit_int,
       offset: socket |> recv_32_bit_int,
       data: socket |> recv_byte!(len - 9)
     }
 
-    Torrent.Parser.validate_data(info_hash["pieces"], block)
+    Torrent.Parser.validate_data(info_hash["pieces"], index, block)
 
-    send info_structs[:writer_pid], { :put, block }
+    send info_structs[:writer_pid], { :put, block, index }
+    pipe_message(socket, info_structs)
   end
 
   def bitfield(socket, len, info_structs) do
     meta_info = info_structs[:meta_info]
     message = socket |> recv_byte!(len - 1)
     Torrent.Request.request_all(socket, message, meta_info)
+    pipe_message(socket, info_structs)
   end
 
   def have(socket, len, info_structs) do
     # this is always 4 byte
-    message = socket |> recv_32_bit_int
-    # TODO: request here
+    meta_info = info_structs[:meta_info]
+    index = socket |> recv_32_bit_int
+
+    send info_structs[:writer_pid], { :get, index, self() }
+    receive do nil ->
+      Torrent.Request.send_request(socket, index, meta_info)
+    end
+    pipe_message(socket, info_structs)
   end
 
   def pipe_message(socket, info_structs) do
@@ -52,12 +61,16 @@ defmodule Torrent.Stream do
     case id do
       0 ->
         IO.puts "got a unchoke message"
+        pipe_message(socket, info_structs)
       1 ->
         IO.puts "got a choke message"
+        pipe_message(socket, info_structs)
       2 ->
         IO.puts "got a interested message"
+        pipe_message(socket, info_structs)
       3 ->
         IO.puts "got a uninterested message"
+        pipe_message(socket, info_structs)
       4 ->
         IO.puts "got a have message"
         have(socket, len, info_structs)
@@ -66,14 +79,14 @@ defmodule Torrent.Stream do
         bitfield(socket, len, info_structs)
       6 ->
         IO.puts "got a request message"
+        pipe_message(socket, info_structs)
       7 ->
         IO.puts "got a piece message"
         piece(socket, len, info_structs)
       8 ->
         IO.puts "got a cancel message"
+        pipe_message(socket, info_structs)
     end
-
-    pipe_message(socket, info_structs)
   end
 
   def recv_8_bit_int(socket) do 

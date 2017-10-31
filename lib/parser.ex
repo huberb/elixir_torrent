@@ -58,9 +58,9 @@ defmodule Torrent.Parser do
     |> Enum.map(&piece_struct/1)
   end
 
-  def validate_data(pieces, block) do
+  def validate_data(pieces, index, block) do
     foreign_hash = block[:data] |> sha_sum
-    real_hash = pieces |> binary_part(block[:index] * 20, 20)
+    real_hash = pieces |> binary_part(index * 20, 20)
     if foreign_hash != real_hash do
       raise "Hash Validation failed on Piece! Abort!"
     end
