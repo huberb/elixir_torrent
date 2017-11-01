@@ -23,9 +23,7 @@ defmodule Torrent.Filehandler do
         manage_files(file_data, file_info)
 
       {:put, block, index, offset} ->
-        IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
-        send file_info[:requester_pid],
-          { :received, index, offset }
+        # IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
         if download_complete?(file_info) do
           write_file(file_data, file_info)
         else
@@ -56,7 +54,9 @@ defmodule Torrent.Filehandler do
              |> Enum.sort_by(fn({offset, block}) -> offset end)
              |> Enum.map(fn({offset, block}) -> block[:data] end)
              |> Enum.join("")
-             Torrent.Parser.validate_block(file_info[:piece_info], index, data)
+
+      Torrent.Parser.validate_block(file_info[:piece_info], index, data)
+      send file_info[:requester_pid], { :received, index }
     end
     file_data
   end
@@ -74,7 +74,7 @@ defmodule Torrent.Filehandler do
   end
 
   defp download_complete?(count) do
-    IO.puts "got #{count[:have]} from #{count[:pieces_needed]}"
+    # IO.puts "got #{count[:have]} from #{count[:pieces_needed]}"
     if count[:pieces_needed] == count[:have] do
       true
     else

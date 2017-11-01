@@ -25,6 +25,10 @@ defmodule Torrent.Stream do
     socket
   end
 
+  def cancel() do
+    exit(:normal)
+  end
+
   def piece(socket, len, info_structs) do
     index = socket |> recv_32_bit_int
     offset = socket |> recv_32_bit_int
@@ -71,7 +75,7 @@ defmodule Torrent.Stream do
     id = socket |> recv_8_bit_int
     flag = @message_flags |> Enum.at(id)
 
-    IO.puts "got a #{flag} message"
+    # IO.puts "got a #{flag} message"
     case flag do
       :choke ->
         pipe_message(socket, info_structs)
@@ -90,7 +94,7 @@ defmodule Torrent.Stream do
       :piece ->
         piece(socket, len, info_structs)
       :cancel ->
-        pipe_message(socket, info_structs)
+        cancel()
     end
   end
 

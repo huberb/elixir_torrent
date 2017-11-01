@@ -13,7 +13,7 @@ defmodule Torrent.Peer do
   defp connect(ip, port, count \\ 0) do
     IO.puts "Try to connect to: " <> ip
     try do
-      Socket.TCP.connect!(ip, port, [timeout: 2000]) 
+      Socket.TCP.connect!(ip, port, [timeout: 1000]) 
     rescue
       e ->
         if e.message == "timeout" do
@@ -75,7 +75,7 @@ defmodule Torrent.Peer do
   end
 
   defp generate_handshake(sha_info_hash) do
-    # The Number 19 in Binary followed by the Protocol String
+    # The Number 19 followed by the Protocol String
     << 19, "BitTorrent protocol" :: binary >> <>
     # add 8 Zeros and the SHA Hash from the Tracker info, 20 Bytes long
     << 0, 0, 0, 0, 0, 0, 0, 0, sha_info_hash :: binary, >> <>

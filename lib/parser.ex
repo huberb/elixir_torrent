@@ -24,7 +24,7 @@ defmodule Torrent.Parser do
             |> Enum.map(&parse_peer/1) 
 
     # this is a development hack to debug a low number of peers
-    peers |> Enum.take(3)
+    peers |> Enum.take(10)
   end
 
   defp parse_peer(peer) do
@@ -55,11 +55,6 @@ defmodule Torrent.Parser do
     |> Enum.map(&make_len_8/1)
     |> Enum.join("")
     |> String.graphemes
-    # |> Enum.with_index
-    # |> Enum.reduce(%{}, 
-    # fn({value, index}, acc) -> 
-    # Map.put(acc, index, String.to_integer(value))
-    # end)
   end
 
   def validate_block(pieces, index, data) do

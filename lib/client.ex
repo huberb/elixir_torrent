@@ -34,9 +34,11 @@ defmodule Torrent.Client do
       receive do
         { :EXIT, from, :normal } ->
           IO.puts "Peer shut down!"
-          remove_peer(peer_pids, from)
+          peer_pids = remove_peer(peer_pids, from)
           manage_peers(peer_pids, writer_pid)
       end
+    else
+      # TODO: close filehandler and requester?
     end
   end
 
@@ -44,6 +46,7 @@ defmodule Torrent.Client do
     peer_pids = List.delete(peer_pids, pid)
     len = peer_pids |> length |> to_string
     IO.puts "Number of Peers left: " <> len
+    peer_pids
   end
 
 end

@@ -11,15 +11,11 @@ defmodule Torrent.Request do
 
       meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
       meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
-
-      offset_struct = 
-        0..num_blocks 
-        |> Enum.map(fn(offset) -> { offset * data_request_len, :pending } end)
-        |> Map.new
+      meta_info = meta_info |> Map.put(:last_req_piece, 0)
 
       piece_struct =
         0..num_pieces
-        |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], offset: offset_struct } } end)
+        |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
         |> Map.new
 
       manage_requests(piece_struct, %{}, meta_info)
@@ -39,38 +35,47 @@ defmodule Torrent.Request do
 
       { :state, peer_id, state } ->
         peer_struct = peer_struct |> update_peer_struct(peer_id, state)
-        piece_struct = piece_struct |> request(peer_struct, meta_info, 0, @max_piece_req)
+        { piece_struct, meta_info } = request(piece_struct, peer_struct, meta_info, @max_piece_req)
+        meta_info = meta_info |> Map.update!(:last_req_piece, fn(i) -> i + 1 end)
         manage_requests(piece_struct, peer_struct, meta_info)
 
-      { :received, index, offset } ->
-        piece_struct = put_in(piece_struct, [index, :offset, offset], :received)
+      { :received, index } ->
+        IO.puts "set piece Nr: #{index} to received"
+        piece_struct = put_in(piece_struct, [index, :state], :received)
+        { piece_struct, meta_info } = request(piece_struct, peer_struct, meta_info, @max_piece_req)
+        # meta_info = meta_info |> Map.update!(:last_req_piece, fn(i) -> i + @max_piece_req end)
         manage_requests(piece_struct, peer_struct, meta_info)
     end
   end
 
-  def request(piece_struct, peer_struct, meta_info, index, max) do
-    if index == max do
-      piece_struct
-    else
-      piece = piece_struct[index]
-      if piece[:state] == :pending && length(piece[:peers]) > 0 do
-        # TODO: better way to choose peer
-        peer_id = piece[:peers] |> Enum.at(0)
-        peer = peer_struct[peer_id]
-        if peer[:state] == :unchoke do
-          block_len = data_length(index, meta_info)
-          send_piece_request(peer[:socket], index, 0, block_len)
-          IO.puts "send request index: #{index}"
-          piece_struct = put_in(piece_struct, [index, :state], :requested)
-          request(piece_struct, peer_struct, meta_info, index + 1, max)
-        else
-          IO.puts "skipped request index: #{index} because of choke"
-          request(piece_struct, peer_struct, meta_info, index + 1, max)
+  def request(piece_struct, peer_struct, meta_info, count) do
+    index = meta_info[:last_req_piece]
+    piece = piece_struct[index]
+
+    peer_id = case length(piece[:peers]) do
+      0 -> nil
+      _ -> piece[:peers] |> Enum.at(0)
+    end
+    peer = peer_struct[peer_id]
+
+    piece_struct = case piece[:state] do
+      :pending -> # if the piece is pending
+        case peer[:state] do 
+          :unchoke -> # and the peer is unchoked
+            block_len = data_length(index, meta_info)
+            send_piece_request(peer[:socket], index, 0, block_len)
+            IO.puts "request index: #{index} with state #{piece_struct[index][:state]}"
+            put_in(piece_struct, [index, :state], :requested)
+          _ -> piece_struct
         end
-      else
-        IO.puts "skipped request index: #{index} with state #{piece[:state]}"
-        request(piece_struct, peer_struct, meta_info, index + 1, max)
-      end
+      _ -> 
+        piece_struct
+    end
+    meta_info = meta_info |> Map.update!(:last_req_piece, fn(i) -> i + 1 end)
+    if count != 0 do
+      request(piece_struct, peer_struct, meta_info, count - 1)
+    else
+      { piece_struct, meta_info }
     end
   end
 
@@ -121,8 +126,8 @@ defmodule Torrent.Request do
   end
 
   def send_block_request(socket, index, offset) do
-    request = request_query(index, offset)
-    socket |> Socket.Stream.send!(request)
+    req = request_query(index, offset)
+    socket |> Socket.Stream.send!(req)
   end
 
   def data_length(index, meta_info) do
