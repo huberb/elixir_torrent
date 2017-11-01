@@ -62,15 +62,15 @@ defmodule Torrent.Peer do
 
   def hear_hello(socket) do 
     socket |> Socket.packet!(:raw)
-    { :ok, message } = socket |> Socket.Stream.recv(1)
-    request_length = message |> :binary.bin_to_list |> Enum.at(0)
 
+    message = socket |> Torrent.Stream.recv_byte!(1)
+    request_length = message |> :binary.bin_to_list |> Enum.at(0)
     %{
       pstrlen: request_length,
-      pstr: socket |> Socket.Stream.recv!(request_length),
-      placeholder: socket |> Socket.Stream.recv!(8),
-      info_hash: socket |> Socket.Stream.recv!(20),
-      peer_id: socket |> Socket.Stream.recv!(20)
+      pstr: socket |> Torrent.Stream.recv_byte!(request_length),
+      placeholder: socket |> Torrent.Stream.recv_byte!(8),
+      info_hash: socket |> Torrent.Stream.recv_byte!(20),
+      peer_id: socket |> Torrent.Stream.recv_byte!(20)
     }
   end
 

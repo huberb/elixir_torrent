@@ -1,7 +1,7 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
   # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 3
+  @max_piece_req 2
 
   def start_link(meta_info) do
     { ok, pid } = Task.start_link(fn ->
@@ -60,7 +60,8 @@ defmodule Torrent.Request do
           case lowest_load(piece_struct, peer_struct, index) do
 
             peer_ip -> # found good peer for request
-              IO.puts "send request for piece #{index}"
+              { ip, _ } = peer_ip
+              IO.puts "send request for piece #{index} from #{ip} with load: #{peer_struct[peer_ip][:load]}"
               peer_struct[peer_ip][:socket] 
               |> send_piece_request(index, 0, meta_info)
               {
@@ -97,9 +98,9 @@ defmodule Torrent.Request do
     # return the id with the lowest load
     %{ id: peer_ip, load: load } =
       filtered_peers
-      |> Enum.reduce(%{id: nil, load: -1}, 
+      |> Enum.reduce(%{id: nil, load: 100}, 
         fn({peer_ip, info}, acc) -> 
-          if info[:load] > acc[:load] do
+          if info[:load] < acc[:load] do
             %{ id: peer_ip, load: info[:load] }
           else
             acc
@@ -122,8 +123,7 @@ defmodule Torrent.Request do
   end
 
   def add_to_ids(piece_struct, peer, index) do
-    peer_list = piece_struct[index][:peers] ++ [peer]
-    put_in(piece_struct, [index, :peers], peer_list)
+    update_in(piece_struct, [index, :peers], &(&1 ++ [peer]))
   end
 
   def add_bitfield(piece_struct, peer, bitfield, bit_index) do
