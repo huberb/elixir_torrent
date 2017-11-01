@@ -1,7 +1,7 @@
 defmodule Torrent.Request do
-  @data_request_len 16384 # 2^14 is a common size
-  # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 1
+  # @data_request_len 16384 # 2^14 is a common size
+  @data_request_len 8192 # 2^13 for simple offset tests
+  @max_piece_req 3
 
   def start_link(meta_info) do
     { ok, pid } = Task.start_link(fn ->
@@ -58,8 +58,14 @@ defmodule Torrent.Request do
     { piece_struct, peer_struct } =
       case piece[:state] do
 
+        :requested -> { piece_struct, peer_struct } # we don't need this piece
+        :received -> { piece_struct, peer_struct } # we don't need this piece
+
         :pending -> # we need this piece
           case lowest_load(piece_struct, peer_struct, index) do
+            nil -> 
+              IO.puts "attempt request"
+              { piece_struct, peer_struct } # could not find a peer for piece
 
             peer_ip -> # found good peer for request
               { ip, _ } = peer_ip
@@ -70,19 +76,26 @@ defmodule Torrent.Request do
                 put_in(piece_struct, [index, :state], :requested),
                 update_in(peer_struct, [peer_ip, :load], &(&1 + 1))
               }
-
-            nil -> { piece_struct, peer_struct } # could not find a peer for piece
           end
 
-        _ -> { piece_struct, peer_struct } # we don't need this piece
+        nil -> 
+          require IEx
+          IEx.pry
       end
 
-    meta_info = Map.update!(meta_info, :last_req_piece, &(&1 + 1))
-    if count != 0 do
-      request(piece_struct, peer_struct, meta_info, count - 1)
-    else
-      # { piece_struct, peer_struct, meta_info }
+    meta_info = raise_counter(meta_info)
+    if count == 0 do
       manage_requests(piece_struct, peer_struct, meta_info)
+    else
+      request(piece_struct, peer_struct, meta_info, count - 1)
+    end
+  end
+
+  def raise_counter(meta_info) do
+    if meta_info[:last_req_piece] == meta_info[:num_pieces] do
+      Map.put(meta_info, :last_req_piece, 0)
+    else
+      Map.update!(meta_info, :last_req_piece, &(&1 + 1))
     end
   end
 
@@ -97,17 +110,17 @@ defmodule Torrent.Request do
           && info[:state] == :unchoke
         end)
 
-    # return the id with the lowest load
+        # return the id with the lowest load
     %{ id: peer_ip, load: load } =
       filtered_peers
       |> Enum.reduce(%{id: nil, load: 100}, 
-        fn({peer_ip, info}, acc) -> 
-          if info[:load] < acc[:load] do
-            %{ id: peer_ip, load: info[:load] }
-          else
-            acc
-          end
-        end)
+         fn({peer_ip, info}, acc) -> 
+           if info[:load] < acc[:load] do
+             %{ id: peer_ip, load: info[:load] }
+           else
+             acc
+           end
+         end)
     peer_ip
   end
 
@@ -164,7 +177,7 @@ defmodule Torrent.Request do
 
   def data_length(index, meta_info) do
     info_hash = meta_info["info"]
-    num_pieces = Torrent.Filehandler.num_pieces(info_hash)
+    num_pieces = meta_info[:num_pieces]
     if index != num_pieces do
       info_hash["piece length"]
     else

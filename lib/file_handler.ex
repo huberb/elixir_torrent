@@ -5,7 +5,7 @@ defmodule Torrent.Filehandler do
     file_info = %{
       have: 0,
       pieces_needed: num_pieces(meta_info), 
-      blocks_needed: num_blocks(meta_info),
+      blocks_in_piece: num_blocks_in_piece(meta_info),
       piece_info: meta_info["pieces"],
       requester_pid: requester_pid
     }
@@ -18,24 +18,20 @@ defmodule Torrent.Filehandler do
 
   defp manage_files(file_data, file_info) do
     receive do
-      # {:get, caller, index} ->
-      #   send caller, file_data[index]
-      #   manage_files(file_data, file_info)
-
       {:put, block, index, offset } ->
         # IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
         if download_complete?(file_info) do
           write_file(file_data, file_info)
         else
+          { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
           manage_files(
-            file_data |> add_block(index, offset, block) |> verify_piece(file_info, index, block[:peer]),
-            file_info |> Map.update!(:have, fn i -> i + 1 end)
+            file_data, file_info
           )
         end
     end
   end
 
-  def add_block(file_data, index, offset, block) do
+  def add_block(file_data, file_info, index, offset, block) do
     file_data = 
       case file_data[index] do
         nil ->
@@ -43,12 +39,14 @@ defmodule Torrent.Filehandler do
         _ ->
           file_data
       end
+
     put_in(file_data, [index, offset], block)
+    |> verify_piece(file_info, index, block[:peer])
   end
 
   def verify_piece(file_data, file_info, index, from) do
     recv_block_len = file_data[index] |> Map.keys |> length
-    if recv_block_len == file_info[:blocks_needed] do
+    if recv_block_len == file_info[:blocks_in_piece] do
       # TODO: move this somewhere else
       data = file_data[index] 
              |> Enum.sort_by(fn({offset, block}) -> offset end)
@@ -56,9 +54,10 @@ defmodule Torrent.Filehandler do
              |> Enum.join("")
 
       Torrent.Parser.validate_block(file_info[:piece_info], index, data)
+      file_info = file_info |> Map.update!(:have, fn i -> i + 1 end)
       send file_info[:requester_pid], { :received, index, from }
     end
-    file_data
+    { file_data, file_info }
   end
 
   def write_file(file_data, count) do
@@ -83,12 +82,17 @@ defmodule Torrent.Filehandler do
   end
 
   def num_blocks(meta_info) do
-    len = Torrent.Request.data_request_len
-    meta_info["piece length"] / len |> round
+    num_pieces(meta_info) * num_blocks_in_piece(meta_info)
+    |> round
+  end
+
+  def num_blocks_in_piece(meta_info) do
+    meta_info["piece length"] / Torrent.Request.data_request_len
+    |> round
   end
 
   def num_pieces(meta_info) do
-    meta_info["length"] / meta_info["piece length"] * num_blocks(meta_info) 
+    meta_info["length"] / meta_info["piece length"]
     |> round
   end
 
