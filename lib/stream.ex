@@ -34,7 +34,7 @@ defmodule Torrent.Stream do
     offset = socket |> recv_32_bit_int
 
     block = %{
-      from_peer: info_structs[:peer_id],
+      peer: info_structs[:peer],
       len: len,
       data: socket |> recv_byte!(len - 9)
     }

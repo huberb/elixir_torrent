@@ -24,7 +24,7 @@ defmodule Torrent.Parser do
             |> Enum.map(&parse_peer/1) 
 
     # this is a development hack to debug a low number of peers
-    # peers |> Enum.take(10)
+    peers |> Enum.take(10)
   end
 
   defp parse_peer(peer) do
@@ -63,7 +63,7 @@ defmodule Torrent.Parser do
     if foreign_hash != real_hash do
       raise "Hash Validation failed on Piece! Abort!"
     else
-      IO.puts "validated piece Nr: #{index}"
+      # IO.puts "validated piece Nr: #{index}"
     end
   end
 

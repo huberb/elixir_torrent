@@ -1,7 +1,7 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
   # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 2
+  @max_piece_req 1
 
   def start_link(meta_info) do
     { ok, pid } = Task.start_link(fn ->
@@ -42,9 +42,11 @@ defmodule Torrent.Request do
         peer_struct = add_state_to_peer(peer_struct, peer_ip, state)
         request(piece_struct, peer_struct, meta_info, @max_piece_req)
 
-      { :received, index } ->
-        IO.puts "set piece Nr: #{index} to received"
+      { :received, index, from } ->
+        { ip, _ } = from
+        IO.puts "set piece Nr: #{index} to received from #{ip}"
         piece_struct = put_in(piece_struct, [index, :state], :received)
+        peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
         request(piece_struct, peer_struct, meta_info, @max_piece_req)
     end
   end

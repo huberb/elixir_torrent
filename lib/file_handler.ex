@@ -18,17 +18,17 @@ defmodule Torrent.Filehandler do
 
   defp manage_files(file_data, file_info) do
     receive do
-      {:get, caller, index} ->
-        send caller, file_data[index]
-        manage_files(file_data, file_info)
+      # {:get, caller, index} ->
+      #   send caller, file_data[index]
+      #   manage_files(file_data, file_info)
 
-      {:put, block, index, offset} ->
+      {:put, block, index, offset } ->
         # IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
         if download_complete?(file_info) do
           write_file(file_data, file_info)
         else
           manage_files(
-            file_data |> add_block(index, offset, block) |> verify_piece(index, file_info),
+            file_data |> add_block(index, offset, block) |> verify_piece(file_info, index, block[:peer]),
             file_info |> Map.update!(:have, fn i -> i + 1 end)
           )
         end
@@ -46,7 +46,7 @@ defmodule Torrent.Filehandler do
     put_in(file_data, [index, offset], block)
   end
 
-  def verify_piece(file_data, index, file_info) do
+  def verify_piece(file_data, file_info, index, from) do
     recv_block_len = file_data[index] |> Map.keys |> length
     if recv_block_len == file_info[:blocks_needed] do
       # TODO: move this somewhere else
@@ -56,7 +56,7 @@ defmodule Torrent.Filehandler do
              |> Enum.join("")
 
       Torrent.Parser.validate_block(file_info[:piece_info], index, data)
-      send file_info[:requester_pid], { :received, index }
+      send file_info[:requester_pid], { :received, index, from }
     end
     file_data
   end
