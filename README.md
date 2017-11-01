@@ -4,12 +4,11 @@ Work in Progress
 Working:
  - parse torrentfile with Bencode
  - connect to tracker
- - parse Peer information and generate handshake
- - receive file from one Peer
+ - parse peer information and generate handshake
+ - receive file from peers
  - write file to disk
 
 TODO:
- - some kind of process handling
- - handle more peers
+ - write file while downloading
  - multi file transfer
  - seed
