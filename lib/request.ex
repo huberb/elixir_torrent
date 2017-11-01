@@ -1,7 +1,7 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
   # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 5
+  @max_piece_req 3
 
   def start_link(meta_info) do
     { ok, pid } = Task.start_link(fn ->
@@ -30,24 +30,22 @@ defmodule Torrent.Request do
 
   def manage_requests(piece_struct, peer_struct, meta_info) do
     receive do
-      { :bitfield, peer_id, socket, bitfield } ->
-        peer_struct = add_new_peer(peer_struct, peer_id, socket)
-        piece_struct = add_bitfield(piece_struct, peer_id, bitfield, 0)
+      { :bitfield, peer_ip, socket, bitfield } ->
+        peer_struct = add_new_peer(peer_struct, peer_ip, socket)
+        piece_struct = add_bitfield(piece_struct, peer_ip, bitfield, 0)
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :piece, peer, socket, index } ->
         manage_requests(piece_struct, peer_struct, meta_info)
 
-      { :state, peer_id, state } ->
-        peer_struct = add_state_to_peer(peer_struct, peer_id, state)
-        info_structs = request(piece_struct, peer_struct, meta_info, @max_piece_req)
-        manage_requests(info_structs)
+      { :state, peer_ip, state } ->
+        peer_struct = add_state_to_peer(peer_struct, peer_ip, state)
+        request(piece_struct, peer_struct, meta_info, @max_piece_req)
 
       { :received, index } ->
         IO.puts "set piece Nr: #{index} to received"
         piece_struct = put_in(piece_struct, [index, :state], :received)
-        info_structs = request(piece_struct, peer_struct, meta_info, @max_piece_req)
-        manage_requests(info_structs)
+        request(piece_struct, peer_struct, meta_info, @max_piece_req)
     end
   end
 
@@ -61,13 +59,13 @@ defmodule Torrent.Request do
         :pending -> # we need this piece
           case lowest_load(piece_struct, peer_struct, index) do
 
-            peer_id -> # found good peer for request
+            peer_ip -> # found good peer for request
               IO.puts "send request for piece #{index}"
-              peer_struct[peer_id][:socket] 
+              peer_struct[peer_ip][:socket] 
               |> send_piece_request(index, 0, meta_info)
               {
                 put_in(piece_struct, [index, :state], :requested),
-                update_in(peer_struct, [peer_id, :load], &(&1 + 1))
+                update_in(peer_struct, [peer_ip, :load], &(&1 + 1))
               }
 
             nil -> { piece_struct, peer_struct } # could not find a peer for piece
@@ -80,7 +78,8 @@ defmodule Torrent.Request do
     if count != 0 do
       request(piece_struct, peer_struct, meta_info, count - 1)
     else
-      { piece_struct, peer_struct, meta_info }
+      # { piece_struct, peer_struct, meta_info }
+      manage_requests(piece_struct, peer_struct, meta_info)
     end
   end
 
@@ -96,17 +95,17 @@ defmodule Torrent.Request do
         end)
 
     # return the id with the lowest load
-    %{ id: peer_id, load: load } =
+    %{ id: peer_ip, load: load } =
       filtered_peers
       |> Enum.reduce(%{id: nil, load: -1}, 
-        fn({peer_id, info}, acc) -> 
+        fn({peer_ip, info}, acc) -> 
           if info[:load] > acc[:load] do
-            %{ id: peer_id, load: info[:load] }
+            %{ id: peer_ip, load: info[:load] }
           else
             acc
           end
         end)
-    peer_id
+    peer_ip
   end
 
   def add_state_to_peer(peer_struct, id, state) when state |> is_atom do
@@ -176,10 +175,10 @@ defmodule Torrent.Request do
     id = 6
 
     << request_length :: 32 >> <>
-      << id :: 8 >> <>
-        << index :: 32 >> <>
-          << offset :: 32 >> <>
-            << @data_request_len :: 32 >>
+    << id :: 8 >> <>
+    << index :: 32 >> <>
+    << offset :: 32 >> <>
+    << @data_request_len :: 32 >>
   end
 
 end

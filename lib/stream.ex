@@ -49,7 +49,7 @@ defmodule Torrent.Stream do
                 |> Torrent.Parser.parse_bitfield
 
     send info_structs[:requester_pid], 
-      { :bitfield, info_structs[:peer_id], socket, piece_list }
+      { :bitfield, info_structs[:peer], socket, piece_list }
 
     pipe_message(socket, Map.put(info_structs, :piece_list, piece_list))
   end
@@ -65,7 +65,7 @@ defmodule Torrent.Stream do
   def unchoke(socket, len, info_structs) do
 
     send info_structs[:requester_pid],
-      { :state, info_structs[:peer_id], :unchoke }
+      { :state, info_structs[:peer], :unchoke }
 
     pipe_message(socket, info_structs)
   end
