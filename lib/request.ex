@@ -23,11 +23,6 @@ defmodule Torrent.Request do
     pid
   end
 
-  def manage_requests(info_structs) when info_structs |> is_tuple do
-    { piece_struct, peer_struct, meta_info } = info_structs
-    manage_requests(piece_struct, peer_struct, meta_info)
-  end
-
   def manage_requests(piece_struct, peer_struct, meta_info) do
     receive do
       { :bitfield, peer_ip, socket, bitfield } ->
@@ -35,7 +30,10 @@ defmodule Torrent.Request do
         piece_struct = add_bitfield(piece_struct, peer_ip, bitfield, 0)
         manage_requests(piece_struct, peer_struct, meta_info)
 
-      { :piece, peer, socket, index } ->
+      { :piece, peer_ip, socket, index } ->
+        { ip, _ } = peer_ip
+        IO.puts "peer: #{ip} has piece number #{index}"
+        piece_struct = add_to_peers(piece_struct, peer_ip, index)
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :state, peer_ip, state } ->
@@ -59,12 +57,13 @@ defmodule Torrent.Request do
       case piece[:state] do
 
         :requested -> { piece_struct, peer_struct } # we don't need this piece
+
         :received -> { piece_struct, peer_struct } # we don't need this piece
 
         :pending -> # we need this piece
           case lowest_load(piece_struct, peer_struct, index) do
             nil -> 
-              IO.puts "attempt request"
+              IO.puts "attempted request #{index} but found no peer"
               { piece_struct, peer_struct } # could not find a peer for piece
 
             peer_ip -> # found good peer for request
@@ -77,10 +76,6 @@ defmodule Torrent.Request do
                 update_in(peer_struct, [peer_ip, :load], &(&1 + 1))
               }
           end
-
-        nil -> 
-          require IEx
-          IEx.pry
       end
 
     meta_info = raise_counter(meta_info)
@@ -103,14 +98,14 @@ defmodule Torrent.Request do
     possible_peers = piece_struct[index][:peers]
 
     filtered_peers = 
-      peer_struct 
+      peer_struct
       |> Enum.filter(
         fn({key, info}) -> 
           key in possible_peers 
           && info[:state] == :unchoke
         end)
 
-        # return the id with the lowest load
+    # return the id with the lowest load
     %{ id: peer_ip, load: load } =
       filtered_peers
       |> Enum.reduce(%{id: nil, load: 100}, 
@@ -137,7 +132,7 @@ defmodule Torrent.Request do
     end
   end
 
-  def add_to_ids(piece_struct, peer, index) do
+  def add_to_peers(piece_struct, peer, index) do
     update_in(piece_struct, [index, :peers], &(&1 ++ [peer]))
   end
 
@@ -148,7 +143,7 @@ defmodule Torrent.Request do
       case bitfield |> Enum.at(bit_index) do
         "1" ->
           piece_struct 
-          |> add_to_ids(peer, bit_index)
+          |> add_to_peers(peer, bit_index)
           |> add_bitfield(peer, bitfield, bit_index + 1)
         "0" ->
           piece_struct 

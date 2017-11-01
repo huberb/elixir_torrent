@@ -51,15 +51,14 @@ defmodule Torrent.Stream do
     send info_structs[:requester_pid], 
       { :bitfield, info_structs[:peer], socket, piece_list }
 
-    pipe_message(socket, Map.put(info_structs, :piece_list, piece_list))
+    pipe_message(socket, info_structs)
   end
 
   def have(socket, info_structs) do
-    # this is always 4 byte
     index = socket |> recv_32_bit_int
-    piece_list = info_structs[:piece_list] 
-                |> List.update_at(index, fn(i) -> i = 1 end)
-    pipe_message(socket, Map.update!(info_structs, :piece_list, fn(l) -> l = piece_list end))
+    send info_structs[:requester_pid], 
+      { :piece, info_structs[:peer], socket, index }
+    pipe_message(socket, info_structs)
   end
 
   def unchoke(socket, len, info_structs) do
@@ -107,8 +106,6 @@ defmodule Torrent.Stream do
   end
 
   def recv_byte!(socket, count) do
-    # { ok, message } = socket |> Socket.Stream.recv(count)
-    # message
     case socket |> Socket.Stream.recv(count) do
       { :ok, message } ->
         if message == nil do
