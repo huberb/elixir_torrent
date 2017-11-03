@@ -20,13 +20,11 @@ defmodule Torrent.Filehandler do
     receive do
       {:put, block, index, offset } ->
         # IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
+        { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
         if download_complete?(file_info) do
           write_file(file_data, file_info)
         else
-          { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
-          manage_files(
-            file_data, file_info
-          )
+          manage_files(file_data, file_info)
         end
     end
   end
@@ -56,6 +54,7 @@ defmodule Torrent.Filehandler do
       Torrent.Parser.validate_block(file_info[:piece_info], index, data)
       file_info = file_info |> Map.update!(:have, fn i -> i + 1 end)
       send file_info[:requester_pid], { :received, index, from }
+      IO.puts "Piece with index: #{index} verified"
     end
     { file_data, file_info }
   end
@@ -74,7 +73,7 @@ defmodule Torrent.Filehandler do
 
   defp download_complete?(count) do
     # IO.puts "got #{count[:have]} from #{count[:pieces_needed]}"
-    if count[:pieces_needed] == count[:have] do
+    if count[:pieces_needed] + 1 == count[:have] do
       true
     else
       false
@@ -87,8 +86,13 @@ defmodule Torrent.Filehandler do
   end
 
   def num_blocks_in_piece(meta_info) do
-    meta_info["piece length"] / Torrent.Request.data_request_len
-    |> round
+    num = meta_info["piece length"] / Torrent.Request.data_request_len
+    # round up
+    if num == trunc(num) do
+      num
+    else
+      trunc(num) + 1
+    end
   end
 
   def num_pieces(meta_info) do
@@ -96,9 +100,18 @@ defmodule Torrent.Filehandler do
     |> round
   end
 
-  # TODO: i think this is wrong now
-  def last_piece_length(meta_info) do 
-    meta_info["length"] - meta_info["piece length"] * num_pieces(meta_info)
+  def last_block_size(meta_info) do
+    piece_len = meta_info["piece length"]
+    blocks_in_piece = num_blocks_in_piece(meta_info) - 1
+    data_len = Torrent.Request.data_request_len
+    piece_len - blocks_in_piece * data_len
+  end
+
+  def last_piece_size(meta_info) do 
+    file_length = meta_info["length"] 
+    piece_len = meta_info["piece length"] 
+    num_pieces = num_pieces(meta_info)
+    file_length - piece_len * num_pieces
   end
 
 end

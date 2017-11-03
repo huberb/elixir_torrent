@@ -1,16 +1,20 @@
 defmodule Torrent.Request do
-  # @data_request_len 16384 # 2^14 is a common size
-  @data_request_len 8192 # 2^13 for simple offset tests
+  @data_request_len 16384 # 2^14 is a common size
+  # @data_request_len 8192 # 2^13 for simple offset tests
   @max_piece_req 3
+  @max_load 100
 
   def start_link(meta_info) do
     { ok, pid } = Task.start_link(fn ->
 
       num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
       num_blocks = Torrent.Filehandler.num_blocks(meta_info["info"])
+      last_piece_size = Torrent.Filehandler.last_piece_size(meta_info["info"])
 
       meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
       meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
+      meta_info = meta_info |> Map.put(:last_piece_size, last_piece_size)
+      # meta_info = meta_info |> Map.put(:last_block_size, last_block_size)
       meta_info = meta_info |> Map.put(:last_req_piece, 0)
 
       piece_struct =
@@ -33,7 +37,7 @@ defmodule Torrent.Request do
       { :piece, peer_ip, socket, index } ->
         { ip, _ } = peer_ip
         IO.puts "peer: #{ip} has piece number #{index}"
-        piece_struct = add_to_peers(piece_struct, peer_ip, index)
+        piece_struct = add_new_peer_id(piece_struct, peer_ip, index)
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :state, peer_ip, state } ->
@@ -42,7 +46,7 @@ defmodule Torrent.Request do
 
       { :received, index, from } ->
         { ip, _ } = from
-        IO.puts "set piece Nr: #{index} to received from #{ip}"
+        # IO.puts "set piece Nr: #{index} to received from #{ip}"
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
         request(piece_struct, peer_struct, meta_info, @max_piece_req)
@@ -63,12 +67,12 @@ defmodule Torrent.Request do
         :pending -> # we need this piece
           case lowest_load(piece_struct, peer_struct, index) do
             nil -> 
-              IO.puts "attempted request #{index} but found no peer"
+              # IO.puts "attempted request #{index} but found no peer"
               { piece_struct, peer_struct } # could not find a peer for piece
 
             peer_ip -> # found good peer for request
               { ip, _ } = peer_ip
-              IO.puts "send request for piece #{index} from #{ip} with load: #{peer_struct[peer_ip][:load]}"
+              # IO.puts "send request for piece #{index} from #{ip} with load: #{peer_struct[peer_ip][:load]}"
               peer_struct[peer_ip][:socket] 
               |> send_piece_request(index, 0, meta_info)
               {
@@ -108,7 +112,7 @@ defmodule Torrent.Request do
     # return the id with the lowest load
     %{ id: peer_ip, load: load } =
       filtered_peers
-      |> Enum.reduce(%{id: nil, load: 100}, 
+      |> Enum.reduce(%{id: nil, load: @max_load}, 
          fn({peer_ip, info}, acc) -> 
            if info[:load] < acc[:load] do
              %{ id: peer_ip, load: info[:load] }
@@ -132,7 +136,7 @@ defmodule Torrent.Request do
     end
   end
 
-  def add_to_peers(piece_struct, peer, index) do
+  def add_new_peer_id(piece_struct, peer, index) do
     update_in(piece_struct, [index, :peers], &(&1 ++ [peer]))
   end
 
@@ -143,7 +147,7 @@ defmodule Torrent.Request do
       case bitfield |> Enum.at(bit_index) do
         "1" ->
           piece_struct 
-          |> add_to_peers(peer, bit_index)
+          |> add_new_peer_id(peer, bit_index)
           |> add_bitfield(peer, bitfield, bit_index + 1)
         "0" ->
           piece_struct 
@@ -157,7 +161,7 @@ defmodule Torrent.Request do
   end
 
   def send_piece_request(socket, index, offset, meta_info) do
-    send_block_request(socket, index, offset)
+    send_block_request(socket, index, offset, meta_info)
     len = data_length(index, meta_info)
     if offset + @data_request_len < len do
       new_offset = offset + @data_request_len
@@ -165,9 +169,13 @@ defmodule Torrent.Request do
     end
   end
 
-  def send_block_request(socket, index, offset) do
-    req = request_query(index, offset)
-    socket |> Socket.Stream.send!(req)
+  def send_block_request(socket, index, offset, meta_info) do
+    # IO.puts "sending request with #{index} and #{offset}"
+    req = request_query(index, offset, meta_info)
+    try do
+      socket |> Socket.Stream.send!(req)
+    catch e ->
+    end
   end
 
   def data_length(index, meta_info) do
@@ -176,19 +184,24 @@ defmodule Torrent.Request do
     if index != num_pieces do
       info_hash["piece length"]
     else
-      Torrent.Filehandler.last_piece_length(info_hash)
+      meta_info[:last_piece_size]
     end
   end
 
-  def request_query(index, offset) do
+  def request_query(index, offset, meta_info) do
     request_length = 13
     id = 6
+    data_len = @data_request_len
+
+    if index == meta_info[:num_pieces] do
+      data_len = meta_info[:last_piece_size]
+    end
 
     << request_length :: 32 >> <>
     << id :: 8 >> <>
     << index :: 32 >> <>
     << offset :: 32 >> <>
-    << @data_request_len :: 32 >>
+    << data_len :: 32 >>
   end
 
 end

@@ -32,13 +32,12 @@ defmodule Torrent.Stream do
   def piece(socket, len, info_structs) do
     index = socket |> recv_32_bit_int
     offset = socket |> recv_32_bit_int
-
+    # IO.puts "received #{index} with offset: #{offset}"
     block = %{
       peer: info_structs[:peer],
       len: len,
       data: socket |> recv_byte!(len - 9)
     }
-
     send info_structs[:writer_pid], { :put, block, index, offset }
     pipe_message(socket, info_structs)
   end
@@ -62,10 +61,8 @@ defmodule Torrent.Stream do
   end
 
   def unchoke(socket, len, info_structs) do
-
     send info_structs[:requester_pid],
       { :state, info_structs[:peer], :unchoke }
-
     pipe_message(socket, info_structs)
   end
 
