@@ -19,7 +19,6 @@ defmodule Torrent.Filehandler do
   defp manage_files(file_data, file_info) do
     receive do
       {:put, block, index, offset } ->
-        # IO.puts "Filehandler recieved data block with index: #{index} and offset: #{offset}"
         { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
         if download_complete?(file_info) do
           write_file(file_data, file_info)
@@ -54,7 +53,7 @@ defmodule Torrent.Filehandler do
       Torrent.Parser.validate_block(file_info[:piece_info], index, data)
       file_info = file_info |> Map.update!(:have, fn i -> i + 1 end)
       send file_info[:requester_pid], { :received, index, from }
-      IO.puts "Piece with index: #{index} verified"
+      # IO.puts "Piece with index: #{index} verified"
     end
     { file_data, file_info }
   end
@@ -66,7 +65,7 @@ defmodule Torrent.Filehandler do
 
   def mkdir_tmp do
     if !File.exists?("tmp") do
-      IO.puts "creating tmp file"
+      # IO.puts "creating tmp file"
       File.mkdir("tmp")
     end
   end

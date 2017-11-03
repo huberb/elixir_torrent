@@ -21,7 +21,7 @@ defmodule Torrent.Stream do
     # len 1, id 2
     message = [0,0,0,1,2] |> :binary.list_to_bin
     socket |> Socket.Stream.send!(message)
-    IO.puts "send interested message"
+    # IO.puts "send interested message"
     socket
   end
 

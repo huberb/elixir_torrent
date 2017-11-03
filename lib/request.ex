@@ -1,8 +1,8 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
   # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 3
-  @max_load 100
+  @max_piece_req 10
+  @max_load 10
 
   def start_link(meta_info) do
     { ok, pid } = Task.start_link(fn ->
@@ -14,8 +14,9 @@ defmodule Torrent.Request do
       meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
       meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
       meta_info = meta_info |> Map.put(:last_piece_size, last_piece_size)
-      # meta_info = meta_info |> Map.put(:last_block_size, last_block_size)
       meta_info = meta_info |> Map.put(:last_req_piece, 0)
+      meta_info = meta_info |> Map.put(:requested_pieces, 0)
+      meta_info = meta_info |> Map.put(:received_pieces, 0)
 
       piece_struct =
         0..num_pieces
@@ -35,8 +36,6 @@ defmodule Torrent.Request do
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :piece, peer_ip, socket, index } ->
-        { ip, _ } = peer_ip
-        IO.puts "peer: #{ip} has piece number #{index}"
         piece_struct = add_new_peer_id(piece_struct, peer_ip, index)
         manage_requests(piece_struct, peer_struct, meta_info)
 
@@ -45,11 +44,16 @@ defmodule Torrent.Request do
         request(piece_struct, peer_struct, meta_info, @max_piece_req)
 
       { :received, index, from } ->
-        { ip, _ } = from
-        # IO.puts "set piece Nr: #{index} to received from #{ip}"
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
+        meta_info = update_in(meta_info, [:requested_pieces], &(&1 - 1))
+        meta_info = update_in(meta_info, [:received_pieces], &(&1 + 1))
         request(piece_struct, peer_struct, meta_info, @max_piece_req)
+
+      { :output, pid } ->
+        send pid, { :requested, meta_info[:requested_pieces], meta_info[:received_pieces] }
+        manage_requests(piece_struct, peer_struct, meta_info)
+
     end
   end
 
@@ -57,27 +61,26 @@ defmodule Torrent.Request do
     index = meta_info[:last_req_piece]
     piece = piece_struct[index]
 
-    { piece_struct, peer_struct } =
+    { piece_struct, peer_struct, meta_info } =
       case piece[:state] do
 
-        :requested -> { piece_struct, peer_struct } # we don't need this piece
+        :requested -> { piece_struct, peer_struct, meta_info } # we don't need this piece
 
-        :received -> { piece_struct, peer_struct } # we don't need this piece
+        :received -> { piece_struct, peer_struct, meta_info } # we don't need this piece
 
         :pending -> # we need this piece
           case lowest_load(piece_struct, peer_struct, index) do
-            nil -> 
-              # IO.puts "attempted request #{index} but found no peer"
-              { piece_struct, peer_struct } # could not find a peer for piece
+
+            nil ->  # could not find a peer for piece
+              { piece_struct, peer_struct, meta_info }
 
             peer_ip -> # found good peer for request
-              { ip, _ } = peer_ip
-              # IO.puts "send request for piece #{index} from #{ip} with load: #{peer_struct[peer_ip][:load]}"
               peer_struct[peer_ip][:socket] 
               |> send_piece_request(index, 0, meta_info)
               {
                 put_in(piece_struct, [index, :state], :requested),
-                update_in(peer_struct, [peer_ip, :load], &(&1 + 1))
+                update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
+                update_in(meta_info, [:requested_pieces], &(&1 + 1)),
               }
           end
       end

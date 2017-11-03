@@ -5,7 +5,10 @@ defmodule Torrent.Client do
     meta_info = torrent_path
                 |> Torrent.Parser.parse_file
 
+    num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
+
     requester_pid = Torrent.Request.start_link(meta_info)
+    output_pid = Torrent.Output.start_link(self(), requester_pid, num_pieces)
     writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, output_path)
 
     info_structs = %{
@@ -33,13 +36,16 @@ defmodule Torrent.Client do
     if length(peer_pids) != 0 do
       receive do
         { :EXIT, from, :normal } ->
-          IO.puts "Peer shut down!"
           peer_pids = remove_peer(peer_pids, from)
           manage_peers(peer_pids, writer_pid)
 
+        { :output, pid } ->
+          send pid, { :peers, peer_pids |> length }
+          manage_peers(peer_pids, writer_pid)
+
+        # TODO: use this
         { :finished } ->
-          IO.puts "got all file pieces"
-          # TODO: kill all peers
+
       end
     else
       # TODO: close filehandler and requester?
@@ -49,7 +55,6 @@ defmodule Torrent.Client do
   def remove_peer(peer_pids, pid) do
     peer_pids = List.delete(peer_pids, pid)
     len = peer_pids |> length |> to_string
-    IO.puts "Number of Peers left: " <> len
     peer_pids
   end
 

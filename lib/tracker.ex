@@ -35,7 +35,7 @@ defmodule Torrent.Tracker do
         Bencoder.decode(body)
 
       {:ok, %HTTPoison.Response{status_code: 404}} ->
-        IO.puts "Not found :("
+        IO.puts "Tracker not found :("
         raise "404"
 
       {:error, %HTTPoison.Error{reason: reason}} ->

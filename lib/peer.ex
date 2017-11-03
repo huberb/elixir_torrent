@@ -11,15 +11,15 @@ defmodule Torrent.Peer do
   end
 
   defp connect(ip, port, count \\ 0) do
-    IO.puts "Try to connect to: " <> ip
+    # IO.puts "Try to connect to: " <> ip
     try do
       Socket.TCP.connect!(ip, port, [timeout: 1000]) 
     rescue
       e ->
         if e.message == "timeout" do
-          IO.puts "got a Timeout on IP: " <> ip
+          # IO.puts "got a Timeout on IP: " <> ip
           if count == 5 do
-            IO.puts "fifth try on IP " <> ip <> " ... stopping now!"
+            # IO.puts "fifth try on IP " <> ip <> " ... stopping now!"
             exit(:normal)
           else
             connect(ip, port, count + 1)
@@ -46,7 +46,7 @@ defmodule Torrent.Peer do
     if foreign_hash != real_hash do
       exit(:wrong_checksum)
     else
-      IO.puts "handshake successful"
+      # IO.puts "handshake successful"
       answer_struct
     end
   end
