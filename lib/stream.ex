@@ -91,6 +91,8 @@ defmodule Torrent.Stream do
         piece(socket, len, info_structs)
       :cancel ->
         cancel()
+      nil ->
+        exit(:normal)
     end
   end
 

@@ -1,8 +1,8 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
   # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 10
-  @max_load 10
+  @max_piece_req 10 # how many max requests per cycle
+  @max_load 1 # max concurrent requests on one peer
 
   def start_link(meta_info) do
     { _, pid } = Task.start_link(fn ->
@@ -14,7 +14,6 @@ defmodule Torrent.Request do
       meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
       meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
       meta_info = meta_info |> Map.put(:last_piece_size, last_piece_size)
-      meta_info = meta_info |> Map.put(:last_req_piece, 0)
       meta_info = meta_info |> Map.put(:requested_pieces, 0)
       meta_info = meta_info |> Map.put(:received_pieces, 0)
 
@@ -23,7 +22,7 @@ defmodule Torrent.Request do
         |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
         |> Map.new
 
-        manage_requests(piece_struct, %{}, meta_info)
+      manage_requests(piece_struct, %{}, meta_info)
     end)
     pid
   end
@@ -46,26 +45,31 @@ defmodule Torrent.Request do
       { :received, index, from } ->
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
-        meta_info = update_in(meta_info, [:requested_pieces], &(&1 - 1))
-        meta_info = update_in(meta_info, [:received_pieces], &(&1 + 1))
         request(piece_struct, peer_struct, meta_info)
-
-      { :output, pid } ->
-        send pid, { :requested, meta_info[:requested_pieces], meta_info[:received_pieces] }
-        manage_requests(piece_struct, peer_struct, meta_info)
     end
   end
 
-  def pieces_to_request(piece_struct) do
-    piece_struct 
-    |> Enum.filter(fn({_, info}) -> info[:state] == :pending end)
-    |> Enum.take(@max_piece_req)
-    |> Enum.map(fn({index, _}) -> index end)
+  def pieces_to_request(piece_struct, meta_info) do
+    unless any_pending?(piece_struct) do
+      piece_struct 
+      |> Enum.filter(fn({_, info}) -> info[:state] == :requested end)
+      |> Enum.map(fn({index, _}) -> index end)
+    else
+      piece_struct 
+      |> Enum.filter(fn({_, info}) -> info[:state] == :pending end)
+      |> Enum.take(@max_piece_req)
+      |> Enum.map(fn({index, _}) -> index end)
+    end
+  end
+
+  def any_pending?(piece_struct) do
+    pending = piece_struct
+        |> Enum.count(fn({_, info}) -> info[:state] == :pending end)
+    if pending == 0, do: false, else: true
   end
 
   def request(piece_struct, peer_struct, meta_info) do
-    pieces = pieces_to_request(piece_struct)
-    # update_in(meta_info, [:last_req_piece], &(&1 + @max_piece_req))
+    pieces = pieces_to_request(piece_struct, meta_info)
     request(piece_struct, peer_struct, meta_info, pieces)
   end
 
@@ -74,18 +78,19 @@ defmodule Torrent.Request do
       manage_requests(piece_struct, peer_struct, meta_info)
     else
       index = pieces |> Enum.at(0)
-      { piece_struct, peer_struct, meta_info } =
+      { piece_struct, peer_struct } =
         case lowest_load(piece_struct, peer_struct, index) do
           nil ->  # could not find a peer for piece
-            { piece_struct, peer_struct, meta_info }
+            { piece_struct, peer_struct }
 
           peer_ip -> # found good peer for request
+            # { ip, _ } = peer_ip
+            # IO.puts "sending request for piece #{index} to #{ip}"
             peer_struct[peer_ip][:socket] 
             |> send_piece_request(index, 0, meta_info)
             {
               put_in(piece_struct, [index, :state], :requested),
               update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
-              update_in(meta_info, [:requested_pieces], &(&1 + 1)),
             }
         end
       request(piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0))
@@ -135,7 +140,7 @@ defmodule Torrent.Request do
   end
 
   def add_bitfield(piece_struct, peer, bitfield, bit_index) do
-    if bit_index == length(bitfield) do
+    if piece_struct[bit_index] == nil do
       piece_struct
     else
       case bitfield |> Enum.at(bit_index) do
@@ -166,12 +171,7 @@ defmodule Torrent.Request do
   def send_block_request(socket, index, offset, meta_info) do
     # IO.puts "sending request with #{index} and #{offset}"
     req = request_query(index, offset, meta_info)
-    try do
-      socket |> Socket.Stream.send!(req)
-    catch _ ->
-      true
-      # TODO: catch this?
-    end
+    socket |> Socket.Stream.send(req)
   end
 
   def data_length(index, meta_info) do

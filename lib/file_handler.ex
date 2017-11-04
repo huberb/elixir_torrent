@@ -11,19 +11,25 @@ defmodule Torrent.Filehandler do
     }
 
     { ok, pid } = Task.start_link(fn -> 
-      manage_files( %{}, file_info )
+      manage_files( %{}, file_info, meta_info)
     end)
     pid
   end
 
-  defp manage_files(file_data, file_info) do
+  defp manage_files(file_data, file_info, meta_info) do
     receive do
+      {:output, pid } ->
+        send pid, { :received, file_data |> Map.to_list |> length }
+        manage_files(file_data, file_info, meta_info)
+
       {:put, block, index, offset } ->
         { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
-        if download_complete?(file_info) do
+        if download_complete?(file_data, file_info) do
+          require IEx
+          IEx.pry
           write_file(file_data, file_info)
         else
-          manage_files(file_data, file_info)
+          manage_files(file_data, file_info, meta_info)
         end
     end
   end
@@ -43,18 +49,15 @@ defmodule Torrent.Filehandler do
 
   def verify_piece(file_data, file_info, index, from) do
     recv_block_len = file_data[index] |> Map.keys |> length
-    if recv_block_len == file_info[:blocks_in_piece] do
-      # TODO: move this somewhere else
-      data = file_data[index] 
-             |> Enum.sort_by(fn({offset, block}) -> offset end)
-             |> Enum.map(fn({offset, block}) -> block[:data] end)
-             |> Enum.join("")
+    file_info = 
+      cond do
+        recv_block_len == file_info[:blocks_in_piece] -> 
+          Torrent.Parser.validate_block(file_info[:piece_info], index, file_data[index])
+          send file_info[:requester_pid], { :received, index, from }
+          file_info
 
-      Torrent.Parser.validate_block(file_info[:piece_info], index, data)
-      file_info = file_info |> Map.update!(:have, fn i -> i + 1 end)
-      send file_info[:requester_pid], { :received, index, from }
-      # IO.puts "Piece with index: #{index} verified"
-    end
+        true -> file_info
+      end
     { file_data, file_info }
   end
 
@@ -70,9 +73,9 @@ defmodule Torrent.Filehandler do
     end
   end
 
-  defp download_complete?(count) do
-    # IO.puts "got #{count[:have]} from #{count[:pieces_needed]}"
-    if count[:pieces_needed] + 1 == count[:have] do
+  defp download_complete?(file_data, file_info) do
+    recv_count = file_data |> Map.to_list |> length
+    if recv_count == file_info[:pieces_needed] do
       true
     else
       false
@@ -86,17 +89,17 @@ defmodule Torrent.Filehandler do
 
   def num_blocks_in_piece(meta_info) do
     num = meta_info["piece length"] / Torrent.Request.data_request_len
-    # round up
-    if num == trunc(num) do
-      num
-    else
-      trunc(num) + 1
-    end
+    if num == trunc(num), do: num, else: trunc(num) + 1
   end
 
   def num_pieces(meta_info) do
-    meta_info["length"] / meta_info["piece length"]
-    |> round
+    num = meta_info["length"] / meta_info["piece length"] - 1
+    # if num == trunc(num), do: round(num), else: num + 1 |> trunc |> round
+    if num == trunc(num) do
+      num |> round
+    else
+      num + 1 |> round
+    end
   end
 
   def last_block_size(meta_info) do
