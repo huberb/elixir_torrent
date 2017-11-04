@@ -169,7 +169,6 @@ defmodule Torrent.Request do
   end
 
   def send_block_request(socket, index, offset, meta_info) do
-    # IO.puts "sending request with #{index} and #{offset}"
     req = request_query(index, offset, meta_info)
     socket |> Socket.Stream.send(req)
   end
@@ -196,6 +195,7 @@ defmodule Torrent.Request do
         true -> 
           @data_request_len
       end
+    IO.puts "sending request with #{index} and len: #{block_size} and offset: #{offset}"
 
     << request_length :: 32 >> <>
     << id :: 8 >> <>

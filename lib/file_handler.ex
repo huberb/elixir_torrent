@@ -25,9 +25,7 @@ defmodule Torrent.Filehandler do
       {:put, block, index, offset } ->
         { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
         if download_complete?(file_data, file_info) do
-          require IEx
-          IEx.pry
-          write_file(file_data, file_info)
+          write_file(file_data, meta_info)
         else
           manage_files(file_data, file_info, meta_info)
         end
@@ -61,9 +59,21 @@ defmodule Torrent.Filehandler do
     { file_data, file_info }
   end
 
-  def write_file(file_data, count) do
-    require IEx
-    IEx.pry
+  def concat_data(file_data) do
+    file_data
+    |> Enum.sort_by(fn({index, block}) -> index end)
+    |> Enum.map(fn({index, block}) -> block[0][:data] end)
+    |> Enum.reduce("", fn(block, acc) -> acc <> block end)
+  end
+
+  def write_file(file_data, meta_info) do
+    data = concat_data(file_data)
+    if data |> :binary.bin_to_list |> length != meta_info["length"] do
+      raise "wrong Size!"
+    end
+    IO.puts "writing file"
+    File.write('tmp/file.jpg', data)
+    IO.puts "done"
   end
 
   def mkdir_tmp do
@@ -75,7 +85,7 @@ defmodule Torrent.Filehandler do
 
   defp download_complete?(file_data, file_info) do
     recv_count = file_data |> Map.to_list |> length
-    if recv_count == file_info[:pieces_needed] do
+    if recv_count == file_info[:pieces_needed] + 1 do
       true
     else
       false
@@ -100,13 +110,6 @@ defmodule Torrent.Filehandler do
     else
       num + 1 |> round
     end
-  end
-
-  def last_block_size(meta_info) do
-    piece_len = meta_info["piece length"]
-    blocks_in_piece = num_blocks_in_piece(meta_info) - 1
-    data_len = Torrent.Request.data_request_len
-    piece_len - blocks_in_piece * data_len
   end
 
   def last_piece_size(meta_info) do 
