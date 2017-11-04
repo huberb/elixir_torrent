@@ -56,11 +56,11 @@ defmodule Torrent.Stream do
   def have(socket, info_structs) do
     index = socket |> recv_32_bit_int
     send info_structs[:requester_pid], 
-      { :piece, info_structs[:peer], socket, index }
+      { :piece, info_structs[:peer], index }
     pipe_message(socket, info_structs)
   end
 
-  def unchoke(socket, len, info_structs) do
+  def unchoke(socket, info_structs) do
     send info_structs[:requester_pid],
       { :state, info_structs[:peer], :unchoke }
     pipe_message(socket, info_structs)
@@ -76,7 +76,7 @@ defmodule Torrent.Stream do
       :choke ->
         pipe_message(socket, info_structs)
       :unchoke ->
-        unchoke(socket, len, info_structs)
+        unchoke(socket, info_structs)
       :interested ->
         pipe_message(socket, info_structs)
       :uninterested ->

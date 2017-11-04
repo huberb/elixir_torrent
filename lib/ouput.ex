@@ -1,7 +1,7 @@
 defmodule Torrent.Output do
 
   def start_link(parent, requester, num_pieces) do
-    { ok, pid } = Task.start_link(fn ->
+    { _, pid } = Task.start_link(fn ->
       output = %{ num_peers: 0, requests: 0, received: 0, max: num_pieces }
       pipe_output(output, %{ parent: parent, requester: requester })
     end)
@@ -32,7 +32,13 @@ defmodule Torrent.Output do
 
     output = get_outputs_from_processes(output, 2)
 
-    IO.puts "peers: #{output[:num_peers]}, received: #{output[:received]}, requested: #{output[:requests]}, left: #{output[:max] - output[:received]}"
+    IO.puts "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n
+      peers: #{output[:num_peers]}
+      received: #{output[:received]}
+      requested: #{output[:requests]}
+      left: #{output[:max] - output[:received]}
+      unrequested: #{output[:max] - output[:received] - output[:requests]}
+    "
 
     pipe_output(output, processes)
   end

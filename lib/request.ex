@@ -5,7 +5,7 @@ defmodule Torrent.Request do
   @max_load 10
 
   def start_link(meta_info) do
-    { ok, pid } = Task.start_link(fn ->
+    { _, pid } = Task.start_link(fn ->
 
       num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
       num_blocks = Torrent.Filehandler.num_blocks(meta_info["info"])
@@ -35,69 +35,60 @@ defmodule Torrent.Request do
         piece_struct = add_bitfield(piece_struct, peer_ip, bitfield, 0)
         manage_requests(piece_struct, peer_struct, meta_info)
 
-      { :piece, peer_ip, socket, index } ->
+      { :piece, peer_ip, index } ->
         piece_struct = add_new_peer_id(piece_struct, peer_ip, index)
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :state, peer_ip, state } ->
         peer_struct = add_state_to_peer(peer_struct, peer_ip, state)
-        request(piece_struct, peer_struct, meta_info, @max_piece_req)
+        request(piece_struct, peer_struct, meta_info)
 
       { :received, index, from } ->
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
         meta_info = update_in(meta_info, [:requested_pieces], &(&1 - 1))
         meta_info = update_in(meta_info, [:received_pieces], &(&1 + 1))
-        request(piece_struct, peer_struct, meta_info, @max_piece_req)
+        request(piece_struct, peer_struct, meta_info)
 
       { :output, pid } ->
         send pid, { :requested, meta_info[:requested_pieces], meta_info[:received_pieces] }
         manage_requests(piece_struct, peer_struct, meta_info)
-
     end
   end
 
-  def request(piece_struct, peer_struct, meta_info, count) do
-    index = meta_info[:last_req_piece]
-    piece = piece_struct[index]
+  def pieces_to_request(piece_struct) do
+    piece_struct 
+    |> Enum.filter(fn({_, info}) -> info[:state] == :pending end)
+    |> Enum.take(@max_piece_req)
+    |> Enum.map(fn({index, _}) -> index end)
+  end
 
-    { piece_struct, peer_struct, meta_info } =
-      case piece[:state] do
+  def request(piece_struct, peer_struct, meta_info) do
+    pieces = pieces_to_request(piece_struct)
+    # update_in(meta_info, [:last_req_piece], &(&1 + @max_piece_req))
+    request(piece_struct, peer_struct, meta_info, pieces)
+  end
 
-        :requested -> { piece_struct, peer_struct, meta_info } # we don't need this piece
-
-        :received -> { piece_struct, peer_struct, meta_info } # we don't need this piece
-
-        :pending -> # we need this piece
-          case lowest_load(piece_struct, peer_struct, index) do
-
-            nil ->  # could not find a peer for piece
-              { piece_struct, peer_struct, meta_info }
-
-            peer_ip -> # found good peer for request
-              peer_struct[peer_ip][:socket] 
-              |> send_piece_request(index, 0, meta_info)
-              {
-                put_in(piece_struct, [index, :state], :requested),
-                update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
-                update_in(meta_info, [:requested_pieces], &(&1 + 1)),
-              }
-          end
-      end
-
-    meta_info = raise_counter(meta_info)
-    if count == 0 do
+  def request(piece_struct, peer_struct, meta_info, pieces) do
+    if length(pieces) == 0 do
       manage_requests(piece_struct, peer_struct, meta_info)
     else
-      request(piece_struct, peer_struct, meta_info, count - 1)
-    end
-  end
+      index = pieces |> Enum.at(0)
+      { piece_struct, peer_struct, meta_info } =
+        case lowest_load(piece_struct, peer_struct, index) do
+          nil ->  # could not find a peer for piece
+            { piece_struct, peer_struct, meta_info }
 
-  def raise_counter(meta_info) do
-    if meta_info[:last_req_piece] == meta_info[:num_pieces] do
-      Map.put(meta_info, :last_req_piece, 0)
-    else
-      Map.update!(meta_info, :last_req_piece, &(&1 + 1))
+          peer_ip -> # found good peer for request
+            peer_struct[peer_ip][:socket] 
+            |> send_piece_request(index, 0, meta_info)
+            {
+              put_in(piece_struct, [index, :state], :requested),
+              update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
+              update_in(meta_info, [:requested_pieces], &(&1 + 1)),
+            }
+        end
+      request(piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0))
     end
   end
 
@@ -113,7 +104,7 @@ defmodule Torrent.Request do
         end)
 
     # return the id with the lowest load
-    %{ id: peer_ip, load: load } =
+    %{ id: peer_ip, load: _ } =
       filtered_peers
       |> Enum.reduce(%{id: nil, load: @max_load}, 
          fn({peer_ip, info}, acc) -> 
@@ -177,7 +168,9 @@ defmodule Torrent.Request do
     req = request_query(index, offset, meta_info)
     try do
       socket |> Socket.Stream.send!(req)
-    catch e ->
+    catch _ ->
+      true
+      # TODO: catch this?
     end
   end
 
@@ -194,17 +187,21 @@ defmodule Torrent.Request do
   def request_query(index, offset, meta_info) do
     request_length = 13
     id = 6
-    data_len = @data_request_len
+    num_pieces = meta_info[:num_pieces]
 
-    if index == meta_info[:num_pieces] do
-      data_len = meta_info[:last_piece_size]
-    end
+    block_size = 
+      cond do
+        num_pieces == index -> 
+          meta_info[:last_piece_size]
+        true -> 
+          @data_request_len
+      end
 
     << request_length :: 32 >> <>
     << id :: 8 >> <>
     << index :: 32 >> <>
     << offset :: 32 >> <>
-    << data_len :: 32 >>
+    << block_size :: 32 >>
   end
 
 end
