@@ -3,8 +3,8 @@ defmodule Torrent.Filehandler do
   def start_link(tracker_info, requester_pid, output_path) do
     meta_info = tracker_info["info"]
     file_info = %{
-      have: 0,
       pieces_needed: num_pieces(meta_info), 
+      received_bytes: 0,
       blocks_in_piece: num_blocks_in_piece(meta_info),
       piece_info: meta_info["pieces"],
       requester_pid: requester_pid
@@ -24,7 +24,9 @@ defmodule Torrent.Filehandler do
 
       {:put, block, index, offset } ->
         { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
-        if download_complete?(file_data, file_info) do
+        # file_info = update_in(file_info, [:received_bytes], &(&1 + block[:len]))
+        # IO.puts "received bytes: #{file_info[:received_bytes]} / #{meta_info["length"]}"
+        if download_complete?(file_info, meta_info) do
           write_file(file_data, meta_info)
         else
           manage_files(file_data, file_info, meta_info)
@@ -69,6 +71,8 @@ defmodule Torrent.Filehandler do
   def write_file(file_data, meta_info) do
     data = concat_data(file_data)
     if data |> :binary.bin_to_list |> length != meta_info["length"] do
+      require IEx
+      IEx.pry
       raise "wrong Size!"
     end
     IO.puts "writing file"
@@ -83,9 +87,8 @@ defmodule Torrent.Filehandler do
     end
   end
 
-  defp download_complete?(file_data, file_info) do
-    recv_count = file_data |> Map.to_list |> length
-    if recv_count == file_info[:pieces_needed] + 1 do
+  defp download_complete?(file_info, meta_info) do
+    if file_info[:received_bytes] == meta_info["length"] do
       true
     else
       false
@@ -104,12 +107,7 @@ defmodule Torrent.Filehandler do
 
   def num_pieces(meta_info) do
     num = meta_info["length"] / meta_info["piece length"] - 1
-    # if num == trunc(num), do: round(num), else: num + 1 |> trunc |> round
-    if num == trunc(num) do
-      num |> round
-    else
-      num + 1 |> round
-    end
+    if num == trunc(num), do: round(num), else: num + 1 |> trunc |> round
   end
 
   def last_piece_size(meta_info) do 

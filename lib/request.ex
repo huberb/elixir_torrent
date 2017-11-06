@@ -1,8 +1,9 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
   # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 10 # how many max requests per cycle
-  @max_load 1 # max concurrent requests on one peer
+  @max_piece_req 2 # how many max requests per cycle
+  @max_load 3 # max concurrent requests on one peer
+  @endgame_count 100 # how much pieces left when speedup
 
   def start_link(meta_info) do
     { _, pid } = Task.start_link(fn ->
@@ -14,8 +15,6 @@ defmodule Torrent.Request do
       meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
       meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
       meta_info = meta_info |> Map.put(:last_piece_size, last_piece_size)
-      meta_info = meta_info |> Map.put(:requested_pieces, 0)
-      meta_info = meta_info |> Map.put(:received_pieces, 0)
 
       piece_struct =
         0..num_pieces
@@ -45,7 +44,28 @@ defmodule Torrent.Request do
       { :received, index, from } ->
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
+        if endgame?(piece_struct) do
+          cancel(piece_struct, peer_struct, meta_info, index)
+        end
         request(piece_struct, peer_struct, meta_info)
+    end
+  end
+
+  def cancel(piece_struct, peer_struct, meta_info, index) do
+    peer_struct |> Enum.each(fn({ _, info }) ->
+      socket = info[:socket]
+      IO.puts "sending cancel for #{index}"
+      send_piece_request(socket, index, 0, meta_info, :cancel)
+    end)
+  end
+
+  def endgame?(piece_struct) do
+    not_received = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :received end)
+    IO.puts not_received
+    if not_received < @endgame_count do
+      true
+    else
+      false
     end
   end
 
@@ -63,8 +83,7 @@ defmodule Torrent.Request do
   end
 
   def any_pending?(piece_struct) do
-    pending = piece_struct
-        |> Enum.count(fn({_, info}) -> info[:state] == :pending end)
+    pending = piece_struct |> Enum.count(fn({_, info}) -> info[:state] == :pending end)
     if pending == 0, do: false, else: true
   end
 
@@ -79,15 +98,16 @@ defmodule Torrent.Request do
     else
       index = pieces |> Enum.at(0)
       { piece_struct, peer_struct } =
-        case lowest_load(piece_struct, peer_struct, index) do
+        case lowest_load(piece_struct, peer_struct, index, meta_info) do
           nil ->  # could not find a peer for piece
+            IO.puts "could not find peer for #{index}"
             { piece_struct, peer_struct }
 
           peer_ip -> # found good peer for request
-            # { ip, _ } = peer_ip
-            # IO.puts "sending request for piece #{index} to #{ip}"
+            { ip, _ } = peer_ip
+            IO.puts "sending request for piece #{index} to #{ip}"
             peer_struct[peer_ip][:socket] 
-            |> send_piece_request(index, 0, meta_info)
+            |> send_piece_request(index, 0, meta_info, :request)
             {
               put_in(piece_struct, [index, :state], :requested),
               update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
@@ -97,7 +117,7 @@ defmodule Torrent.Request do
     end
   end
 
-  def lowest_load(piece_struct, peer_struct, index) do
+  def lowest_load(piece_struct, peer_struct, index, meta_info) do
     possible_peers = piece_struct[index][:peers]
 
     filtered_peers = 
@@ -108,18 +128,24 @@ defmodule Torrent.Request do
           && info[:state] == :unchoke
         end)
 
-    # return the id with the lowest load
-    %{ id: peer_ip, load: _ } =
-      filtered_peers
-      |> Enum.reduce(%{id: nil, load: @max_load}, 
-         fn({peer_ip, info}, acc) -> 
-           if info[:load] < acc[:load] do
-             %{ id: peer_ip, load: info[:load] }
-           else
-             acc
-           end
-         end)
-    peer_ip
+    if endgame?(piece_struct) do
+      IO.puts "random peer"
+      { ip, _ } = filtered_peers |>  Enum.shuffle |> Enum.at(0)
+      ip
+    else
+      # return the id with the lowest load
+      %{ id: peer_ip, load: _ } =
+        filtered_peers
+        |> Enum.reduce(%{id: nil, load: @max_load}, 
+           fn({peer_ip, info}, acc) -> 
+             if info[:load] < acc[:load] do
+               %{ id: peer_ip, load: info[:load] }
+             else
+               acc
+             end
+           end)
+      peer_ip
+    end
   end
 
   def add_state_to_peer(peer_struct, id, state) when state |> is_atom do
@@ -159,17 +185,17 @@ defmodule Torrent.Request do
     @data_request_len
   end
 
-  def send_piece_request(socket, index, offset, meta_info) do
-    send_block_request(socket, index, offset, meta_info)
+  def send_piece_request(socket, index, offset, meta_info, type) do
+    send_block_request(socket, index, offset, meta_info, type)
     len = data_length(index, meta_info)
     if offset + @data_request_len < len do
       new_offset = offset + @data_request_len
-      send_piece_request(socket, index, new_offset, meta_info)
+      send_piece_request(socket, index, new_offset, meta_info, type)
     end
   end
 
-  def send_block_request(socket, index, offset, meta_info) do
-    req = request_query(index, offset, meta_info)
+  def send_block_request(socket, index, offset, meta_info, type) do
+    req = request_query(index, offset, meta_info, type)
     socket |> Socket.Stream.send(req)
   end
 
@@ -183,10 +209,16 @@ defmodule Torrent.Request do
     end
   end
 
-  def request_query(index, offset, meta_info) do
-    request_length = 13
-    id = 6
+  def request_query(index, offset, meta_info, type) do
     num_pieces = meta_info[:num_pieces]
+    request_length = 13
+
+    id = case type do
+      :request ->
+        6
+      :cancel ->
+        8
+    end
 
     block_size = 
       cond do
@@ -195,7 +227,8 @@ defmodule Torrent.Request do
         true -> 
           @data_request_len
       end
-    IO.puts "sending request with #{index} and len: #{block_size} and offset: #{offset}"
+     
+    # IO.puts "sending request with #{index} and len: #{block_size} and offset: #{offset}"
 
     << request_length :: 32 >> <>
     << id :: 8 >> <>

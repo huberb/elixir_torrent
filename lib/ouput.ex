@@ -1,7 +1,8 @@
 defmodule Torrent.Output do
 
-  def start_link(parent, filehandler, num_pieces) do
+  def start_link(parent, filehandler, meta_info) do
     { _, pid } = Task.start_link(fn ->
+      num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
       output = %{ num_peers: 0, received: 0, max: num_pieces }
       pipe_output(output, %{ parent: parent, filehandler: filehandler })
     end)
