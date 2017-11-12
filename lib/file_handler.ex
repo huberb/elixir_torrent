@@ -3,7 +3,7 @@ defmodule Torrent.Filehandler do
   def start_link(tracker_info, requester_pid, parent, output_path) do
     meta_info = tracker_info["info"]
     file_info = %{
-      pieces_needed: num_pieces(meta_info) + 1, 
+      pieces_needed: num_pieces(meta_info),
       blocks_in_piece: num_blocks_in_piece(meta_info),
       piece_info: meta_info["pieces"],
       requester_pid: requester_pid,
@@ -26,13 +26,12 @@ defmodule Torrent.Filehandler do
 
       {:put, block, index, offset } ->
         cond do
-          index in file_info[:recv_pieces] ->
-            IO.puts "got #{index} twice!"
+          index in file_info[:recv_pieces] -> # already have this
             manage_files(file_data, file_info, meta_info)
 
           true -> 
             { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
-            if download_complete?(file_info, meta_info) do
+            if download_complete?(file_info) do
               send file_info[:parent_pid], { :finished }
               write_file(file_data, file_info, meta_info)
             else
@@ -87,6 +86,11 @@ defmodule Torrent.Filehandler do
 
   def write_file(file_data, file_info, meta_info) do
     data = concat_data(file_data)
+    if byte_size(data) != meta_info["length"] do
+      require IEx
+      IEx.pry
+      raise "Wrong Filesize!"
+    end
     mkdir_tmp()
     path = "#{file_info[:output_path]}/#{meta_info["name"]}"
     IO.puts "writing file to #{path}"
@@ -101,12 +105,8 @@ defmodule Torrent.Filehandler do
     end
   end
 
-  defp download_complete?(file_info, meta_info) do
-    if length(file_info[:recv_pieces]) == file_info[:pieces_needed] do
-      true
-    else
-      false
-    end
+  defp download_complete?(file_info) do
+    length(file_info[:recv_pieces]) == file_info[:pieces_needed]
   end
 
   def num_blocks(meta_info) do
@@ -119,14 +119,18 @@ defmodule Torrent.Filehandler do
   end
 
   def num_pieces(meta_info) do
-    num = meta_info["length"] / meta_info["piece length"] - 1
-    round(num)
+    num = meta_info["length"] / meta_info["piece length"]
+    if trunc(num) == num do
+      round(num)
+    else
+      round(num)
+    end
   end
 
   def last_piece_size(meta_info) do 
     file_length = meta_info["length"] 
     piece_len = meta_info["piece length"] 
-    num_pieces = num_pieces(meta_info)
+    num_pieces = num_pieces(meta_info) - 1
     file_length - piece_len * num_pieces
   end
 

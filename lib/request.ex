@@ -20,7 +20,7 @@ defmodule Torrent.Request do
       meta_info = meta_info |> Map.put(:last_piece_size, last_piece_size)
 
       piece_struct =
-        0..num_pieces
+        0..num_pieces - 1
         |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
         |> Map.new
 
@@ -48,28 +48,19 @@ defmodule Torrent.Request do
         IO.puts "received #{index}"
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
-        if endgame?(piece_struct) do
-          cancel(piece_struct, peer_struct, meta_info, index)
+        unless any_pending?(piece_struct) do
           IO.puts "canceled #{index}"
+          cancel(peer_struct, meta_info, index)
         end
         request(piece_struct, peer_struct, meta_info)
     end
   end
 
-  def cancel(piece_struct, peer_struct, meta_info, index) do
-    peer_struct |> Enum.each(fn({ _, info }) ->
+  def cancel(peer_struct, meta_info, index) do
+    Enum.each(peer_struct, fn({_, info}) ->
       socket = info[:socket]
       send_piece_request(socket, index, 0, meta_info, :cancel)
     end)
-  end
-
-  def endgame?(piece_struct) do
-    unrequested = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :requested end)
-    if unrequested == 0 do
-      true
-    else
-      false
-    end
   end
 
   def pieces_to_request(piece_struct, meta_info) do
@@ -78,7 +69,7 @@ defmodule Torrent.Request do
       |> Enum.filter(fn({_, info}) -> info[:state] == :requested end)
       |> Enum.take(@max_piece_req)
       |> Enum.map(fn({index, _}) -> index end)
-      else
+    else
       piece_struct 
       |> Enum.filter(fn({_, info}) -> info[:state] == :pending end)
       |> Enum.sort_by(fn({index, _}) -> index end)
@@ -88,8 +79,7 @@ defmodule Torrent.Request do
   end
 
   def any_pending?(piece_struct) do
-    pending = piece_struct |> Enum.count(fn({_, info}) -> info[:state] == :pending end)
-    if pending == 0, do: false, else: true
+    Enum.any?(piece_struct, fn({_, info}) -> info[:state] == :pending end)
   end
 
   def request(piece_struct, peer_struct, meta_info) do
@@ -152,7 +142,7 @@ defmodule Torrent.Request do
           && info[:state] == :unchoke
         end)
 
-    if endgame?(piece_struct) do
+    unless any_pending?(piece_struct) do
       filtered_peers |> Enum.shuffle |> Enum.take(5)
     else
       # return the id with the lowest load
@@ -226,8 +216,7 @@ defmodule Torrent.Request do
     if index != num_pieces do
       info_hash["piece length"]
     else
-      info_hash["piece length"]
-      # meta_info[:last_piece_size]
+      meta_info[:last_piece_size]
     end
   end
 
@@ -242,14 +231,13 @@ defmodule Torrent.Request do
         8
     end
 
-    # block_size = cond do
-    #   num_pieces == index -> 
-    #     IO.puts "requesting with last size param"
-    #     meta_info[:last_piece_size]
-    #   true -> 
-    #     @data_request_len
-    # end
-    block_size = @data_request_len
+    block_size = cond do
+      num_pieces - 1 == index -> 
+        # meta_info[:last_piece_size]
+        @data_request_len
+      true -> 
+        @data_request_len
+    end
 
     << request_length :: 32 >>
     <> << id :: 8 >>

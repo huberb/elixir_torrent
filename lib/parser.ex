@@ -35,17 +35,10 @@ defmodule Torrent.Parser do
 
     # Byte 4 and 5 are the Port, 
     # this needs to be read as a 2 Byte Integer
-    # TODO: use kernel methods here
-    port = [ Enum.at(peer, 4), Enum.at(peer, 5) ] 
-           |> parse_port
-
+    port = Enum.slice(peer, 4..5) 
+           |> :binary.list_to_bin
+           |> :binary.decode_unsigned
     { ip, port }
-  end
-
-  def parse_port(binary) do
-    lower_byte = binary |> Enum.at(0) |> Integer.to_string(2)
-    higher_byte = binary |> Enum.at(1) |> Integer.to_string(2)
-    lower_byte <> higher_byte |> String.to_integer(2)
   end
 
   def parse_bitfield(bitfield) do

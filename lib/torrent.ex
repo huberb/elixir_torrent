@@ -13,7 +13,7 @@ defmodule Torrent do
   """
   def init do
     torrent_path = './examples/ubuntu.torrent'
-    output_path = './downloads/'
+    output_path = 'tmp'
     Torrent.Client.connect torrent_path, output_path
   end
 
