@@ -6,7 +6,7 @@ defmodule Torrent.Client do
                 |> Torrent.Parser.parse_file
 
     requester_pid = Torrent.Request.start_link(meta_info)
-    writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, output_path)
+    writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
     output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
 
     info_structs = %{
@@ -27,23 +27,25 @@ defmodule Torrent.Client do
       Map.put(info_structs, :peer, p)
       |> Torrent.Peer.connect
     end)
-    |> manage_peers(info_structs[:writer_pid])
+    |> manage_peers(info_structs[:requester_pid])
   end
 
-  def manage_peers(peer_pids, writer_pid) do
+  def manage_peers(peer_pids, requester_pid) do
     if length(peer_pids) != 0 do
       receive do
         { :EXIT, from, :normal } ->
           peer_pids = remove_peer(peer_pids, from)
-          manage_peers(peer_pids, writer_pid)
+          manage_peers(peer_pids, requester_pid)
 
         { :output, pid } ->
           send pid, { :peers, peer_pids |> length }
-          manage_peers(peer_pids, writer_pid)
+          manage_peers(peer_pids, requester_pid)
 
         # TODO: use this
         { :finished } ->
-
+          Process.exit(requester_pid, :normal)
+          Enum.each(peer_pids, &(Process.exit(&1, :normal)))
+          IO.puts "shutting down!"
       end
     else
       # TODO: close filehandler and requester?

@@ -1,17 +1,19 @@
 defmodule Torrent.Filehandler do
 
-  def start_link(tracker_info, requester_pid, output_path) do
+  def start_link(tracker_info, requester_pid, parent, output_path) do
     meta_info = tracker_info["info"]
     file_info = %{
-      pieces_needed: num_pieces(meta_info), 
+      pieces_needed: num_pieces(meta_info) + 1, 
       blocks_in_piece: num_blocks_in_piece(meta_info),
       piece_info: meta_info["pieces"],
       requester_pid: requester_pid,
+      parent_pid: parent,
+      output_path: output_path,
       recv_pieces: []
     }
 
     { _, pid } = Task.start_link(fn -> 
-      manage_files( %{}, file_info, meta_info)
+      manage_files(%{}, file_info, meta_info)
     end)
     pid
   end
@@ -31,9 +33,11 @@ defmodule Torrent.Filehandler do
           true -> 
             { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
             if download_complete?(file_info, meta_info) do
-              write_file(file_data, meta_info)
+              send file_info[:parent_pid], { :finished }
+              write_file(file_data, file_info, meta_info)
+            else
+              manage_files(file_data, file_info, meta_info)
             end
-            manage_files(file_data, file_info, meta_info)
         end
     end
   end
@@ -81,12 +85,12 @@ defmodule Torrent.Filehandler do
     |> Enum.join("")
   end
 
-  def write_file(file_data, meta_info) do
+  def write_file(file_data, file_info, meta_info) do
     data = concat_data(file_data)
-    IO.puts "writing file"
-    require IEx
-    IEx.pry
-    File.write('tmp/file.jpg', data)
+    mkdir_tmp()
+    path = "#{file_info[:output_path]}/#{meta_info["name"]}"
+    IO.puts "writing file to #{path}"
+    File.write(path, data)
     IO.puts "done"
   end
 
@@ -98,7 +102,7 @@ defmodule Torrent.Filehandler do
   end
 
   defp download_complete?(file_info, meta_info) do
-    if file_info[:recv_pieces] |> length == 1370 do
+    if length(file_info[:recv_pieces]) == file_info[:pieces_needed] do
       true
     else
       false
@@ -111,13 +115,12 @@ defmodule Torrent.Filehandler do
   end
 
   def num_blocks_in_piece(meta_info) do
-    num = meta_info["piece length"] / Torrent.Request.data_request_len
-    if num == trunc(num), do: num, else: trunc(num)
+    meta_info["piece length"] / Torrent.Request.data_request_len
   end
 
   def num_pieces(meta_info) do
     num = meta_info["length"] / meta_info["piece length"] - 1
-    if num == trunc(num), do: round(num), else: num + 1 |> trunc |> round
+    round(num)
   end
 
   def last_piece_size(meta_info) do 

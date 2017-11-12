@@ -3,7 +3,6 @@ defmodule Torrent.Request do
   # @data_request_len 8192 # 2^13 for simple offset tests
   @max_piece_req 4 # how many max requests per cycle
   @max_load 3 # max concurrent requests on one peer
-  @endgame_count 50 # how much pieces left when speedup
 
   def data_request_len do
     @data_request_len
@@ -65,9 +64,8 @@ defmodule Torrent.Request do
   end
 
   def endgame?(piece_struct) do
-    # not_received = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :received end)
-    not_requested = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :requested end)
-    if not_requested == 0 do
+    unrequested = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :requested end)
+    if unrequested == 0 do
       true
     else
       false
