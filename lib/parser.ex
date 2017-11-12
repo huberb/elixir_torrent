@@ -58,11 +58,6 @@ defmodule Torrent.Parser do
   end
 
   def validate_block(pieces, index, data) do
-    data = data
-           |> Enum.sort_by(fn({offset, block}) -> offset end)
-           |> Enum.map(fn({offset, block}) -> block[:data] end)
-           |> Enum.join("")
-
     foreign_hash = data |> sha_sum
     real_hash = pieces |> binary_part(index * 20, 20)
     if foreign_hash != real_hash do
