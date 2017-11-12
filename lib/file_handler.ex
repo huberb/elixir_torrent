@@ -10,7 +10,7 @@ defmodule Torrent.Filehandler do
       recv_pieces: []
     }
 
-    { ok, pid } = Task.start_link(fn -> 
+    { _, pid } = Task.start_link(fn -> 
       manage_files( %{}, file_info, meta_info)
     end)
     pid
@@ -25,15 +25,14 @@ defmodule Torrent.Filehandler do
       {:put, block, index, offset } ->
         cond do
           index in file_info[:recv_pieces] ->
+            IO.puts "got #{index} twice!"
             manage_files(file_data, file_info, meta_info)
 
-          download_complete?(file_info, meta_info) ->
-            require IEx
-            IEx.pry
-            write_file(file_data, meta_info)
-
           true -> 
-            { file_data, file_info } = file_data |> add_block(file_info, index, offset, block)
+            { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
+            if download_complete?(file_info, meta_info) do
+              write_file(file_data, meta_info)
+            end
             manage_files(file_data, file_info, meta_info)
         end
     end
@@ -70,15 +69,15 @@ defmodule Torrent.Filehandler do
 
   def concat_data(file_data) do
     file_data
-    |> Enum.sort_by(fn({index, block}) -> index end)
-    |> Enum.map(fn({index, block}) -> block end)
+    |> Enum.sort_by(fn({index, _}) -> index end)
+    |> Enum.map(fn({_, block}) -> block end)
     |> Enum.reduce("", fn(block, acc) -> acc <> block end)
   end
 
   def concat_block(block) do
     block 
-    |> Enum.sort_by(fn({offset, block}) -> offset end)
-    |> Enum.map(fn({offset, block}) -> block[:data] end)
+    |> Enum.sort_by(fn({offset, _}) -> offset end)
+    |> Enum.map(fn({_, block}) -> block[:data] end)
     |> Enum.join("")
   end
 
@@ -99,7 +98,7 @@ defmodule Torrent.Filehandler do
   end
 
   defp download_complete?(file_info, meta_info) do
-    if file_info[:recv_pieces] |> length == 1369 do
+    if file_info[:recv_pieces] |> length == 1370 do
       true
     else
       false

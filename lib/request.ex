@@ -5,6 +5,10 @@ defmodule Torrent.Request do
   @max_load 3 # max concurrent requests on one peer
   @endgame_count 50 # how much pieces left when speedup
 
+  def data_request_len do
+    @data_request_len
+  end
+
   def start_link(meta_info) do
     { _, pid } = Task.start_link(fn ->
 
@@ -42,23 +46,14 @@ defmodule Torrent.Request do
         request(piece_struct, peer_struct, meta_info)
 
       { :received, index, from } ->
-        cond do
-          piece_struct[index][:state] == :received -> # nothing to do, got sth twice
-            IO.puts "got #{index} twice!"
-            cancel(piece_struct, peer_struct, meta_info, index)
-            manage_requests(piece_struct, peer_struct, meta_info)
-
-          true -> # default case, new piece
-            IO.puts "received #{index}"
-            piece_struct = put_in(piece_struct, [index, :state], :received)
-            # this is only used if not in endgame
-            peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
-            if endgame?(piece_struct) do
-              IO.puts "cancel"
-              cancel(piece_struct, peer_struct, meta_info, index)
-            end
-            request(piece_struct, peer_struct, meta_info)
+        IO.puts "received #{index}"
+        piece_struct = put_in(piece_struct, [index, :state], :received)
+        peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
+        if endgame?(piece_struct) do
+          cancel(piece_struct, peer_struct, meta_info, index)
+          IO.puts "canceled #{index}"
         end
+        request(piece_struct, peer_struct, meta_info)
     end
   end
 
@@ -70,12 +65,9 @@ defmodule Torrent.Request do
   end
 
   def endgame?(piece_struct) do
-    not_received = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :received end)
-    if not_received == 0 do
-      IO.puts "ending it"
-      exit(:normal)
-    end
-    if not_received < @endgame_count do
+    # not_received = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :received end)
+    not_requested = piece_struct |> Enum.count(fn({_, info}) -> info[:state] != :requested end)
+    if not_requested == 0 do
       true
     else
       false
@@ -86,7 +78,7 @@ defmodule Torrent.Request do
     unless any_pending?(piece_struct) do
       piece_struct 
       |> Enum.filter(fn({_, info}) -> info[:state] == :requested end)
-      |> Enum.take(@max_piece_req * 2)
+      |> Enum.take(@max_piece_req)
       |> Enum.map(fn({index, _}) -> index end)
       else
       piece_struct 
@@ -113,13 +105,12 @@ defmodule Torrent.Request do
     else
       index = pieces |> Enum.at(0)
       { piece_struct, peer_struct } =
-        case lowest_load(piece_struct, peer_struct, index, meta_info) do
+        case find_good_peer(piece_struct, peer_struct, index, meta_info) do
           nil ->  # could not find a peer for piece
             IO.puts "could not find peer for #{index}"
             { piece_struct, peer_struct }
 
-          peer_ip = { ip, peer } -> # found good peer for request
-            # { ip, _ } = peer_ip
+          peer_ip = { ip, peer } -> # found one good peer for request
             IO.puts "sending request for piece #{index} to #{ip}"
             peer_struct[peer_ip][:socket] 
             |> send_piece_request(index, 0, meta_info, :request)
@@ -127,12 +118,32 @@ defmodule Torrent.Request do
               put_in(piece_struct, [index, :state], :requested),
               update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
             }
+
+          [ first | peers ] -> # request from a list of peers
+            request_from_all(peer_struct, index, meta_info, first, peers)
+            { piece_struct, peer_struct }
         end
         request(piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0))
     end
   end
 
-  def lowest_load(piece_struct, peer_struct, index, meta_info) do
+  # request a piece from all peers
+  def request_from_all(peer_struct, index, meta_info, next, remaining) do
+    { peer_id, info } = next
+    peer_struct[peer_id][:socket] 
+    |> send_piece_request(index, 0, meta_info, :request)
+
+    { ip, _ } = peer_id
+    IO.puts "requesting #{index} from #{ip}"
+
+    if length(remaining) > 0 do
+      [ next | remaining ] = remaining
+      request_from_all(peer_struct, index, meta_info, next, remaining)
+    end
+  end
+
+  # find a peer that can send the piece
+  def find_good_peer(piece_struct, peer_struct, index, meta_info) do
     possible_peers = piece_struct[index][:peers]
 
     filtered_peers = 
@@ -144,8 +155,7 @@ defmodule Torrent.Request do
         end)
 
     if endgame?(piece_struct) do
-      { ip, _ } = filtered_peers |> Enum.shuffle |> Enum.at(0)
-      ip
+      filtered_peers |> Enum.shuffle |> Enum.take(5)
     else
       # return the id with the lowest load
       %{ id: peer_ip, load: _ } =
@@ -162,10 +172,12 @@ defmodule Torrent.Request do
     end
   end
 
-  def add_state_to_peer(peer_struct, id, state) when state |> is_atom do
+  # peer switched from choke to unchoke or vv
+  def add_state_to_peer(peer_struct, id, state) do
     put_in(peer_struct, [id, :state], state)
   end
 
+  # new peer connection
   def add_new_peer(peer_struct, id, socket) do
     case peer_struct[id] do
       nil ->
@@ -175,6 +187,7 @@ defmodule Torrent.Request do
     end
   end
 
+  # add peer to list of available sender for one piece
   def add_new_peer_id(piece_struct, peer, index) do
     update_in(piece_struct, [index, :peers], &(&1 ++ [peer]))
   end
@@ -193,10 +206,6 @@ defmodule Torrent.Request do
           |> add_bitfield(peer, bitfield, bit_index + 1)
       end
     end
-  end
-
-  def data_request_len do
-    @data_request_len
   end
 
   def send_piece_request(socket, index, offset, meta_info, type) do
@@ -219,7 +228,8 @@ defmodule Torrent.Request do
     if index != num_pieces do
       info_hash["piece length"]
     else
-      meta_info[:last_piece_size]
+      info_hash["piece length"]
+      # meta_info[:last_piece_size]
     end
   end
 
@@ -234,12 +244,14 @@ defmodule Torrent.Request do
         8
     end
 
-    block_size = cond do
-      num_pieces == index -> 
-        meta_info[:last_piece_size]
-      true -> 
-        @data_request_len
-    end
+    # block_size = cond do
+    #   num_pieces == index -> 
+    #     IO.puts "requesting with last size param"
+    #     meta_info[:last_piece_size]
+    #   true -> 
+    #     @data_request_len
+    # end
+    block_size = @data_request_len
 
     << request_length :: 32 >>
     <> << id :: 8 >>
