@@ -13,11 +13,11 @@ defmodule Torrent.Request do
 
       num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
       num_blocks = Torrent.Filehandler.num_blocks(meta_info["info"])
-      last_piece_size = Torrent.Filehandler.last_piece_size(meta_info["info"])
+      last_block_size = Torrent.Filehandler.last_block_size(meta_info["info"])
 
       meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
       meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
-      meta_info = meta_info |> Map.put(:last_piece_size, last_piece_size)
+      meta_info = meta_info |> Map.put(:last_block_size, last_block_size)
 
       piece_struct =
         0..num_pieces - 1
@@ -233,8 +233,8 @@ defmodule Torrent.Request do
 
     block_size = cond do
       num_pieces - 1 == index -> 
-        # meta_info[:last_piece_size]
-        @data_request_len
+        meta_info[:last_block_size]
+        # @data_request_len
       true -> 
         @data_request_len
     end

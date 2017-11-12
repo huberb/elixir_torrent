@@ -123,15 +123,21 @@ defmodule Torrent.Filehandler do
     if trunc(num) == num do
       round(num)
     else
-      round(num)
+      round(num) + 1
     end
   end
 
-  def last_piece_size(meta_info) do 
+  def last_piece_size(meta_info) do
     file_length = meta_info["length"] 
     piece_len = meta_info["piece length"] 
     num_pieces = num_pieces(meta_info) - 1
-    file_length - piece_len * num_pieces
+    last_piece_size = file_length - piece_len * num_pieces
+  end
+
+  def last_block_size(meta_info) do 
+    data_request_len = Torrent.Request.data_request_len
+    last_piece_size(meta_info) - (num_blocks_in_piece(meta_info) - 1) * data_request_len
+    |> round
   end
 
 end
