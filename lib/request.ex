@@ -45,13 +45,17 @@ defmodule Torrent.Request do
         request(piece_struct, peer_struct, meta_info)
 
       { :received, index, from } ->
-        IO.puts "received #{index}"
+        { ip, _ } = from
+        IO.puts "received #{index}, from #{ip}"
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
         unless any_pending?(piece_struct) do
           IO.puts "canceled #{index}"
           cancel(peer_struct, meta_info, index)
         end
+        request(piece_struct, peer_struct, meta_info)
+
+      after 3_000 ->
         request(piece_struct, peer_struct, meta_info)
     end
   end
@@ -95,11 +99,13 @@ defmodule Torrent.Request do
       { piece_struct, peer_struct } =
         case find_good_peer(piece_struct, peer_struct, index, meta_info) do
           nil ->  # could not find a peer for piece
-            IO.puts "could not find peer for #{index}"
+            { piece_struct, peer_struct }
+
+          [] ->  # could not find a peer for piece
             { piece_struct, peer_struct }
 
           peer_ip = { ip, peer } -> # found one good peer for request
-            IO.puts "sending request for piece #{index} to #{ip}"
+            # IO.puts "sending request for piece #{index} to #{ip}"
             peer_struct[peer_ip][:socket] 
             |> send_piece_request(index, 0, meta_info, :request)
             {
@@ -110,6 +116,7 @@ defmodule Torrent.Request do
           [ first | peers ] -> # request from a list of peers
             request_from_all(peer_struct, index, meta_info, first, peers)
             { piece_struct, peer_struct }
+
         end
         request(piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0))
     end
@@ -122,7 +129,7 @@ defmodule Torrent.Request do
     |> send_piece_request(index, 0, meta_info, :request)
 
     { ip, _ } = peer_id
-    IO.puts "requesting #{index} from #{ip}"
+    # IO.puts "requesting #{index} from #{ip}"
 
     if length(remaining) > 0 do
       [ next | remaining ] = remaining
@@ -162,7 +169,11 @@ defmodule Torrent.Request do
 
   # peer switched from choke to unchoke or vv
   def add_state_to_peer(peer_struct, id, state) do
-    put_in(peer_struct, [id, :state], state)
+    if peer_struct[id] != nil do
+      put_in(peer_struct, [id, :state], state)
+    else
+      peer_struct
+    end
   end
 
   # new peer connection

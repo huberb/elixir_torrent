@@ -27,10 +27,10 @@ defmodule Torrent.Tracker do
   end
 
   defp get_body(query) do
+    IO.puts query
     # TODO: remove this dep
     HTTPoison.start
-
-    case HTTPoison.get(query) do
+    case HTTPoison.get(query, [], [follow_redirect: true]) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         Bencoder.decode(body)
 

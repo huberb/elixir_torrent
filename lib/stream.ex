@@ -106,7 +106,7 @@ defmodule Torrent.Stream do
 
   def recv_byte!(socket, count) do
     case socket |> Socket.Stream.recv(count) do
-      { :error, :enotconn } ->
+      { :error, _ } ->
         exit(:normal)
       { :ok, nil } ->
         exit(:normal)

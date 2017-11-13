@@ -41,10 +41,9 @@ defmodule Torrent.Client do
           send pid, { :peers, peer_pids |> length }
           manage_peers(peer_pids, requester_pid)
 
-        # TODO: use this
         { :finished } ->
-          Process.exit(requester_pid, :normal)
-          Enum.each(peer_pids, &(Process.exit(&1, :normal)))
+          Process.exit(requester_pid, :kill)
+          Enum.each(peer_pids, &(Process.exit(&1, :kill)))
           IO.puts "shutting down!"
       end
     else

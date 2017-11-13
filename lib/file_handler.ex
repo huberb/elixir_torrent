@@ -2,6 +2,13 @@ defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, requester_pid, parent, output_path) do
     meta_info = tracker_info["info"]
+
+    mkdir_tmp()
+    path = "#{output_path}/#{meta_info["name"]}"
+    File.rm(path)
+    File.touch(path)
+    { _, file } = :file.open(path, [:read, :write, :binary])
+
     file_info = %{
       pieces_needed: num_pieces(meta_info),
       blocks_in_piece: num_blocks_in_piece(meta_info),
@@ -9,6 +16,8 @@ defmodule Torrent.Filehandler do
       requester_pid: requester_pid,
       parent_pid: parent,
       output_path: output_path,
+      file: file,
+      piece_length: meta_info["piece length"],
       recv_pieces: []
     }
 
@@ -54,16 +63,27 @@ defmodule Torrent.Filehandler do
     |> verify_piece(file_info, index, block[:peer])
   end
 
+  def add_piece(file_data, index, block, from) do
+    file_data
+    |> pop_in([index]) 
+    |> elem(1)
+    |> put_in([index], %{})
+    |> put_in([index, :data], block)
+    |> put_in([index, :peer], from)
+  end
+
   def verify_piece(file_data, file_info, index, from) do
     recv_block_len = file_data[index] |> Map.keys |> length
 
     if recv_block_len == file_info[:blocks_in_piece] do
+      send file_info[:requester_pid], { :received, index, from }
       block = concat_block(file_data[index])
       Torrent.Parser.validate_block(file_info[:piece_info], index, block)
-      file_data = put_in(file_data, [index], block)
+
+      file_data = add_piece(file_data, index, block, from)
       file_info = update_in(file_info, [:recv_pieces], &(&1 ++ [index]))
-      send file_info[:requester_pid], { :received, index, from }
-      IO.puts "validated: #{index}"
+      # IO.puts "validated: #{index}"
+      write_piece(file_data, file_info, index)
       { file_data, file_info }
     else
       { file_data, file_info }
@@ -73,8 +93,8 @@ defmodule Torrent.Filehandler do
   def concat_data(file_data) do
     file_data
     |> Enum.sort_by(fn({index, _}) -> index end)
-    |> Enum.map(fn({_, block}) -> block end)
-    |> Enum.reduce("", fn(block, acc) -> acc <> block end)
+    |> Enum.map(fn({_, block}) -> block[:data] end)
+    |> Enum.reduce("", fn(data, acc) -> acc <> data end)
   end
 
   def concat_block(block) do
@@ -82,6 +102,13 @@ defmodule Torrent.Filehandler do
     |> Enum.sort_by(fn({offset, _}) -> offset end)
     |> Enum.map(fn({_, block}) -> block[:data] end)
     |> Enum.join("")
+  end
+
+  def write_piece(file_data, file_info, index) do
+    offset = file_info[:piece_length] * index
+    :file.position(file_info[:file], offset)
+    :file.write(file_info[:file], file_data[index][:data])
+    { file_data, file_info }
   end
 
   def write_file(file_data, file_info, meta_info) do
@@ -94,7 +121,7 @@ defmodule Torrent.Filehandler do
     mkdir_tmp()
     path = "#{file_info[:output_path]}/#{meta_info["name"]}"
     IO.puts "writing file to #{path}"
-    File.write(path, data)
+    # File.write(path, data)
     IO.puts "done"
   end
 
