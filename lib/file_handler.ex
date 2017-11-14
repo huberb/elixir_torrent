@@ -28,25 +28,23 @@ defmodule Torrent.Filehandler do
   end
 
   defp manage_files(file_data, file_info, meta_info) do
-    receive do
-      {:output, pid } ->
-        send pid, { :received, file_data |> Map.to_list |> length }
-        manage_files(file_data, file_info, meta_info)
+    if download_complete?(file_info) do
+      send file_info[:parent_pid], { :finished }
+      verify_file_length(file_data, file_info, meta_info)
+    else
+      receive do
+        {:output, pid } ->
+          send pid, { :received, length(file_info[:recv_pieces]) }
+          manage_files(file_data, file_info, meta_info)
 
-      {:put, block, index, offset } ->
-        cond do
-          index in file_info[:recv_pieces] -> # already have this
+        {:put, block, index, offset } ->
+          if index in file_info[:recv_pieces] do # already have this
             manage_files(file_data, file_info, meta_info)
-
-          true -> 
+          else
             { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
-            if download_complete?(file_info) do
-              send file_info[:parent_pid], { :finished }
-              verify_file_length(file_data, file_info, meta_info)
-            else
-              manage_files(file_data, file_info, meta_info)
-            end
-        end
+            manage_files(file_data, file_info, meta_info)
+          end
+      end
     end
   end
 
@@ -80,9 +78,11 @@ defmodule Torrent.Filehandler do
       block = concat_block(file_data[index])
       Torrent.Parser.validate_block(file_info[:piece_info], index, block)
 
-      file_data = add_piece(file_data, index, block, from)
       file_info = update_in(file_info, [:recv_pieces], &(&1 ++ [index]))
+
+      file_data = add_piece(file_data, index, block, from)
       file_data = write_piece(file_data, file_info, index)
+
       { file_data, file_info }
     else
       { file_data, file_info }
@@ -108,8 +108,7 @@ defmodule Torrent.Filehandler do
     :file.position(file_info[:file], offset)
     :file.write(file_info[:file], file_data[index][:data])
     # remove data from struct to save memory
-    file_data = pop_in(file_data, [index]) |> elem(1)
-    file_data
+    pop_in(file_data, [index]) |> elem(1)
   end
 
   def verify_file_length(file_data, file_info, meta_info) do
@@ -156,7 +155,7 @@ defmodule Torrent.Filehandler do
     file_length = meta_info["length"] 
     piece_len = meta_info["piece length"] 
     num_pieces = num_pieces(meta_info) - 1
-    last_piece_size = file_length - piece_len * num_pieces
+    file_length - piece_len * num_pieces
   end
 
   def last_block_size(meta_info) do 

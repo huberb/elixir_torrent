@@ -98,10 +98,8 @@ defmodule Torrent.Request do
       index = pieces |> Enum.at(0)
       { piece_struct, peer_struct } =
         case find_good_peer(piece_struct, peer_struct, index, meta_info) do
-          nil ->  # could not find a peer for piece
-            { piece_struct, peer_struct }
 
-          [] ->  # could not find a peer for piece
+          nil ->  # could not find a peer for piece
             { piece_struct, peer_struct }
 
           [ first | peers ] -> # request from a list of peers
@@ -137,18 +135,19 @@ defmodule Torrent.Request do
 
   # find a peer that can send the piece
   def find_good_peer(piece_struct, peer_struct, index, meta_info) do
-    possible_peers = piece_struct[index][:peers]
+    connections_with_piece = piece_struct[index][:peers]
 
     filtered_peers = 
       peer_struct
       |> Enum.filter(
         fn({key, info}) -> 
-          key in possible_peers 
+          key in connections_with_piece
           && info[:state] == :unchoke
         end)
 
     unless any_pending?(piece_struct) do
-      filtered_peers |> Enum.shuffle |> Enum.take(5)
+      peers = filtered_peers |> Enum.shuffle |> Enum.take(5)
+      if Enum.empty?(peers), do: nil, else: peers
     else
       # return the id with the lowest load
       %{ id: peer_ip, load: _ } =

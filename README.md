@@ -9,6 +9,6 @@ Working:
  - write file to disk
 
 TODO:
- - write file while downloading
- - multi file transfer
+ - multi file torrents
+ - magnet links
  - seed

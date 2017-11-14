@@ -69,10 +69,9 @@ defmodule Torrent.Stream do
   def pipe_message(socket, info_structs) do
     len = socket |> recv_32_bit_int
     id = socket |> recv_8_bit_int
-    flag = @message_flags |> Enum.at(id)
 
     # IO.puts "got a #{flag} message"
-    case flag do
+    case Enum.at(@message_flags, id) do
       :choke ->
         pipe_message(socket, info_structs)
       :unchoke ->
@@ -86,6 +85,8 @@ defmodule Torrent.Stream do
       :bitfield ->
         bitfield(socket, len, info_structs)
       :request ->
+        require IEx
+        IEx.pry
         pipe_message(socket, info_structs)
       :piece ->
         piece(socket, len, info_structs)
