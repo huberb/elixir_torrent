@@ -36,7 +36,8 @@ defmodule Torrent.Peer do
            |> hear_hello
            |> verify_checksum(info_structs[:meta_info])
 
-    info_structs = info_structs |> Map.put(:peer_id, answer[:peer_id])
+    peer_ip = answer[:peer_ip]
+    info_structs = put_in(info_structs, [:peer_ip], peer_ip)
     socket |> Torrent.Stream.leech(info_structs)
   end
 

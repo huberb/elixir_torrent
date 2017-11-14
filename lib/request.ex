@@ -37,7 +37,7 @@ defmodule Torrent.Request do
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :piece, peer_ip, index } ->
-        piece_struct = add_new_peer_id(piece_struct, peer_ip, index)
+        piece_struct = add_new_peer_ip(piece_struct, peer_ip, index)
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :state, peer_ip, state } ->
@@ -104,7 +104,11 @@ defmodule Torrent.Request do
           [] ->  # could not find a peer for piece
             { piece_struct, peer_struct }
 
-          peer_ip = { ip, peer } -> # found one good peer for request
+          [ first | peers ] -> # request from a list of peers
+            request_from_all(peer_struct, index, meta_info, first, peers)
+            { piece_struct, peer_struct }
+
+          peer_ip -> # found one good peer for request
             # IO.puts "sending request for piece #{index} to #{ip}"
             peer_struct[peer_ip][:socket] 
             |> send_piece_request(index, 0, meta_info, :request)
@@ -113,9 +117,6 @@ defmodule Torrent.Request do
               update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
             }
 
-          [ first | peers ] -> # request from a list of peers
-            request_from_all(peer_struct, index, meta_info, first, peers)
-            { piece_struct, peer_struct }
 
         end
         request(piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0))
@@ -124,12 +125,9 @@ defmodule Torrent.Request do
 
   # request a piece from all peers
   def request_from_all(peer_struct, index, meta_info, next, remaining) do
-    { peer_id, info } = next
-    peer_struct[peer_id][:socket] 
+    { peer_ip, info } = next
+    peer_struct[peer_ip][:socket] 
     |> send_piece_request(index, 0, meta_info, :request)
-
-    { ip, _ } = peer_id
-    # IO.puts "requesting #{index} from #{ip}"
 
     if length(remaining) > 0 do
       [ next | remaining ] = remaining
@@ -187,7 +185,7 @@ defmodule Torrent.Request do
   end
 
   # add peer to list of available sender for one piece
-  def add_new_peer_id(piece_struct, peer, index) do
+  def add_new_peer_ip(piece_struct, peer, index) do
     update_in(piece_struct, [index, :peers], &(&1 ++ [peer]))
   end
 
@@ -198,7 +196,7 @@ defmodule Torrent.Request do
       case bitfield |> Enum.at(bit_index) do
         "1" ->
           piece_struct 
-          |> add_new_peer_id(peer, bit_index)
+          |> add_new_peer_ip(peer, bit_index)
           |> add_bitfield(peer, bitfield, bit_index + 1)
         "0" ->
           piece_struct 

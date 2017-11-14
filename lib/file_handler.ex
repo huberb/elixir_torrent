@@ -42,7 +42,7 @@ defmodule Torrent.Filehandler do
             { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
             if download_complete?(file_info) do
               send file_info[:parent_pid], { :finished }
-              write_file(file_data, file_info, meta_info)
+              verify_file_length(file_data, file_info, meta_info)
             else
               manage_files(file_data, file_info, meta_info)
             end
@@ -82,8 +82,7 @@ defmodule Torrent.Filehandler do
 
       file_data = add_piece(file_data, index, block, from)
       file_info = update_in(file_info, [:recv_pieces], &(&1 ++ [index]))
-      # IO.puts "validated: #{index}"
-      write_piece(file_data, file_info, index)
+      file_data = write_piece(file_data, file_info, index)
       { file_data, file_info }
     else
       { file_data, file_info }
@@ -108,21 +107,20 @@ defmodule Torrent.Filehandler do
     offset = file_info[:piece_length] * index
     :file.position(file_info[:file], offset)
     :file.write(file_info[:file], file_data[index][:data])
-    { file_data, file_info }
+    # remove data from struct to save memory
+    file_data = pop_in(file_data, [index]) |> elem(1)
+    file_data
   end
 
-  def write_file(file_data, file_info, meta_info) do
-    data = concat_data(file_data)
-    if byte_size(data) != meta_info["length"] do
+  def verify_file_length(file_data, file_info, meta_info) do
+    path = "#{file_info[:output_path]}/#{meta_info["name"]}"
+    %{ size: size } = File.stat! path
+    if size != meta_info["length"] do
       require IEx
       IEx.pry
       raise "Wrong Filesize!"
     end
-    mkdir_tmp()
-    path = "#{file_info[:output_path]}/#{meta_info["name"]}"
-    IO.puts "writing file to #{path}"
-    # File.write(path, data)
-    IO.puts "done"
+    IO.puts "Filesize correct: #{meta_info["length"]} bytes"
   end
 
   def mkdir_tmp do
