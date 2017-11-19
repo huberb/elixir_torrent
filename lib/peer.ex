@@ -42,7 +42,7 @@ defmodule Torrent.Peer do
   end
 
   def verify_checksum(answer_struct, meta_info) do
-    real_hash = meta_info["info"] |> Bencoder.encode |> Torrent.Parser.sha_sum
+    real_hash = meta_info[:hash]
     foreign_hash = answer_struct[:info_hash]
     if foreign_hash != real_hash do
       exit(:wrong_checksum)
@@ -53,9 +53,7 @@ defmodule Torrent.Peer do
   end
 
   def say_hello(socket, meta_info) do
-    handshake = meta_info["info"]
-                |> Bencoder.encode
-                |> Torrent.Parser.sha_sum
+    handshake = meta_info[:hash]
                 |> generate_handshake
     socket |> Socket.Stream.send!(handshake)
     socket

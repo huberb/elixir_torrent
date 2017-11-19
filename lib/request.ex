@@ -11,9 +11,9 @@ defmodule Torrent.Request do
   def start_link(meta_info) do
     { _, pid } = Task.start_link(fn ->
 
-      num_pieces = Torrent.Filehandler.num_pieces(meta_info["info"])
-      num_blocks = Torrent.Filehandler.num_blocks(meta_info["info"])
-      last_block_size = Torrent.Filehandler.last_block_size(meta_info["info"])
+      num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
+      num_blocks = Torrent.Filehandler.num_blocks(meta_info[:info])
+      last_block_size = Torrent.Filehandler.last_block_size(meta_info[:info])
 
       meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
       meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
@@ -219,10 +219,10 @@ defmodule Torrent.Request do
   end
 
   def data_length(index, meta_info) do
-    info_hash = meta_info["info"]
+    info_hash = meta_info[:info]
     num_pieces = meta_info[:num_pieces]
     if index != num_pieces do
-      info_hash["piece length"]
+      info_hash[:"piece length"]
     else
       meta_info[:last_piece_size]
     end
@@ -242,7 +242,6 @@ defmodule Torrent.Request do
     block_size = cond do
       num_pieces - 1 == index -> 
         meta_info[:last_block_size]
-        # @data_request_len
       true -> 
         @data_request_len
     end

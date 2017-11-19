@@ -5,26 +5,78 @@ defmodule Torrent.Parser do
     # TODO: File Error
     { ok, content } = File.read(torrent_path)
 
-    if ok == :ok do
-      Bencoder.decode(content)
-    else
+    unless ok == :ok do
       raise "No Torrent File"
+    end
+
+    content = Bencoder.decode(content) |> keys_to_atom
+    content = put_in(content, [:hash], 
+              content[:info] |> Bencoder.encode |> sha_sum)
+  end
+
+  def keys_to_atom(map) do
+    if is_list(map) do
+      map
+    else
+      map |> Enum.reduce(%{}, fn({key, val}, acc) -> 
+        if is_binary(val) || is_integer(val) do
+          put_in(acc, [String.to_atom(key)], val)
+        else
+          put_in(acc, [String.to_atom(key)], keys_to_atom(val))
+        end
+      end)
+    end
+  end
+
+  def parse_magnet(magnet_link) do
+    magnet_parts = magnet_link 
+                   |> URI.decode 
+                   |> String.split("&") 
+                   |> parse_magnet_parts([])
+
+    announce_list = Enum.filter(magnet_parts, &(elem(&1, 0) == "tr" ) ) 
+                    |> Enum.map(&(elem(&1, 1)))
+
+    announce = Enum.at(announce_list, 0)
+
+    hash = Enum.filter(magnet_parts, &(elem(&1, 0) == "magnet:?xt" ) )
+           |> Enum.map(&(elem(&1, 1)))
+           |> Enum.at(0)
+           |> String.trim("urn:btih:")
+           |> String.upcase
+           |> Base.decode16
+           |> elem(1)
+
+    %{
+      announce: announce,
+      "announce-list": announce_list,
+      hash: hash
+    }
+  end
+
+  def parse_magnet_parts(parts, list) do
+    if Enum.empty?(parts) do
+      list
+    else
+      { part, parts }  = List.pop_at(parts, 0)
+      part = part |> String.split("=") |> List.to_tuple
+      parse_magnet_parts(parts, list ++ [part])
     end
   end
 
   def parse_all_peers(peer_list) do
     # the delete_at(0) is to delete my own ip
-    peers = peer_list 
-            |> :binary.bin_to_list
-            |> Enum.split(6)
-            |> Tuple.to_list
-            |> List.delete_at(0)
-            |> Enum.at(0)
-            |> Enum.chunk(6)
-            |> Enum.map(&parse_peer/1) 
+    peer_list 
+    |> :binary.bin_to_list
+    |> Enum.split(6)
+    |> Tuple.to_list
+    |> List.delete_at(0)
+    |> Enum.at(0)
+    |> Enum.chunk(6)
+    |> Enum.map(&parse_peer/1) 
 
-    # this is a development hack to debug a low number of peers
-    # peers |> Enum.take(10)
+            # this is a development hack to debug a low number of peers
+            # peers |> Enum.take(10)
   end
 
   defp parse_peer(peer) do
@@ -33,8 +85,8 @@ defmodule Torrent.Parser do
          |> Enum.take(4) 
          |> Enum.join(".")
 
-    # Byte 4 and 5 are the Port, 
-    # this needs to be read as a 2 Byte Integer
+         # Byte 4 and 5 are the Port, 
+         # this needs to be read as a 2 Byte Integer
     port = Enum.slice(peer, 4..5) 
            |> :binary.list_to_bin
            |> :binary.decode_unsigned

@@ -1,23 +1,21 @@
 defmodule Torrent.Client do
 
-  def connect(torrent_path, output_path) do
+  def connect(meta_info, output_path) do
     Process.flag(:trap_exit, true)
-    meta_info = torrent_path
-                |> Torrent.Parser.parse_file
 
-    requester_pid = Torrent.Request.start_link(meta_info)
-    writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
-    output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
-
-    info_structs = %{
-      meta_info: meta_info, 
-      writer_pid: writer_pid,
-      requester_pid: requester_pid
-    }
-
+    # requester_pid = Torrent.Request.start_link(meta_info)
+    # writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
+    # output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
+    # 
+    # info_structs = %{
+    #   meta_info: meta_info, 
+    #   writer_pid: writer_pid,
+    #   requester_pid: requester_pid
+    # }
+    
     meta_info
     |> Torrent.Tracker.request
-    |> connect_all_peers(info_structs)
+    # |> connect_all_peers(info_structs)
   end
 
   def connect_all_peers(tracker_resp, info_structs) do

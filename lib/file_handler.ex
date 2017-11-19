@@ -1,10 +1,10 @@
 defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, requester_pid, parent, output_path) do
-    meta_info = tracker_info["info"]
+    meta_info = tracker_info[:info]
 
     mkdir_tmp()
-    path = "#{output_path}/#{meta_info["name"]}"
+    path = "#{output_path}/#{meta_info[:name]}"
     File.rm(path)
     File.touch(path)
     { _, file } = :file.open(path, [:read, :write, :binary])
@@ -12,12 +12,12 @@ defmodule Torrent.Filehandler do
     file_info = %{
       pieces_needed: num_pieces(meta_info),
       blocks_in_piece: num_blocks_in_piece(meta_info),
-      piece_info: meta_info["pieces"],
+      piece_info: meta_info[:pieces],
       requester_pid: requester_pid,
       parent_pid: parent,
       output_path: output_path,
       file: file,
-      piece_length: meta_info["piece length"],
+      piece_length: meta_info[:"piece length"],
       recv_pieces: []
     }
 
@@ -112,14 +112,14 @@ defmodule Torrent.Filehandler do
   end
 
   def verify_file_length(file_data, file_info, meta_info) do
-    path = "#{file_info[:output_path]}/#{meta_info["name"]}"
+    path = "#{file_info[:output_path]}/#{meta_info[:name]}"
     %{ size: size } = File.stat! path
     if size != meta_info["length"] do
       require IEx
       IEx.pry
       raise "Wrong Filesize!"
     end
-    IO.puts "Filesize correct: #{meta_info["length"]} bytes"
+    IO.puts "Filesize correct: #{meta_info[:length]} bytes"
   end
 
   def mkdir_tmp do
@@ -139,11 +139,11 @@ defmodule Torrent.Filehandler do
   end
 
   def num_blocks_in_piece(meta_info) do
-    meta_info["piece length"] / Torrent.Request.data_request_len
+    meta_info[:"piece length"] / Torrent.Request.data_request_len
   end
 
   def num_pieces(meta_info) do
-    num = meta_info["length"] / meta_info["piece length"]
+    num = meta_info[:length] / meta_info[:"piece length"]
     if trunc(num) == num do
       round(num)
     else
@@ -152,8 +152,8 @@ defmodule Torrent.Filehandler do
   end
 
   def last_piece_size(meta_info) do
-    file_length = meta_info["length"] 
-    piece_len = meta_info["piece length"] 
+    file_length = meta_info[:length] 
+    piece_len = meta_info[:"piece length"] 
     num_pieces = num_pieces(meta_info) - 1
     file_length - piece_len * num_pieces
   end
