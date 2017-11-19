@@ -1,16 +1,20 @@
 defmodule Torrent.Stream do
 
   @message_flags [
-    :choke, 
-    :unchoke, 
-    :interested, 
-    :uninterested, 
-    :have, 
-    :bitfield, 
-    :request, 
-    :piece, 
-    :cancel 
+    { 0, :choke },
+    { 1, :unchoke },
+    { 2, :interested },
+    { 3, :uninterested },
+    { 4, :have },
+    { 5, :bitfield },
+    { 6, :request },
+    { 7, :piece },
+    { 8, :cancel },
+    { 20, :extension },
   ]
+
+  def ask_for_meta_info(socket) do
+  end
 
   def leech(socket, info_structs) do
     socket |> send_interested
@@ -66,12 +70,22 @@ defmodule Torrent.Stream do
     pipe_message(socket, info_structs)
   end
 
+  def extension(socket, len, info_structs) do
+    id = recv_byte!(socket, 1) |> :binary.bin_to_list |> Enum.at(0)
+    if id == 0 do # extension handshake
+      len = recv_byte!(socket, len - 2)
+      require IEx
+      IEx.pry
+    end
+    pipe_message(socket, info_structs)
+  end
+
   def pipe_message(socket, info_structs) do
     len = socket |> recv_32_bit_int
     id = socket |> recv_8_bit_int
 
-    # IO.puts "got a #{flag} message"
-    case Enum.at(@message_flags, id) do
+    { id, flag } = List.keyfind(@message_flags, id, 0)
+    case flag do
       :choke ->
         pipe_message(socket, info_structs)
       :unchoke ->
@@ -85,13 +99,13 @@ defmodule Torrent.Stream do
       :bitfield ->
         bitfield(socket, len, info_structs)
       :request ->
-        require IEx
-        IEx.pry
         pipe_message(socket, info_structs)
       :piece ->
         piece(socket, len, info_structs)
       :cancel ->
         cancel()
+      :extension -> # extension for metadata transfer
+        extension(socket, len, info_structs)
       nil ->
         exit(:normal)
     end

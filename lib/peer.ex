@@ -4,8 +4,7 @@ defmodule Torrent.Peer do
     { ip, port } = info_structs[:peer]
 
     { :ok, pid } = Task.start_link fn -> 
-      connect(ip, port)
-      |> initiate_connection(info_structs)
+      connect(ip, port) |> initiate_connection(info_structs)
     end
     pid
   end
@@ -31,30 +30,26 @@ defmodule Torrent.Peer do
   end
 
   def initiate_connection(socket, info_structs) do
-    answer = socket 
-           |> say_hello(info_structs[:meta_info]) 
-           |> hear_hello
-           |> verify_checksum(info_structs[:meta_info])
+    { info_hash, options } = socket 
+      |> say_hello(info_structs[:meta_info]) 
+      |> hear_hello
 
-    peer_ip = answer[:peer_ip]
-    info_structs = put_in(info_structs, [:peer_ip], peer_ip)
+    verify_checksum(info_hash, info_structs[:meta_info])
+    
+    # peer_ip = answer[:peer_ip]
+    # info_structs = put_in(info_structs, [:peer_ip], peer_ip)
     socket |> Torrent.Stream.leech(info_structs)
   end
 
-  def verify_checksum(answer_struct, meta_info) do
+  def verify_checksum(foreign_hash, meta_info) do
     real_hash = meta_info[:hash]
-    foreign_hash = answer_struct[:info_hash]
     if foreign_hash != real_hash do
       exit(:wrong_checksum)
-    else
-      # IO.puts "handshake successful"
-      answer_struct
     end
   end
 
   def say_hello(socket, meta_info) do
-    handshake = meta_info[:hash]
-                |> generate_handshake
+    handshake = generate_handshake(meta_info[:hash])
     socket |> Socket.Stream.send!(handshake)
     socket
   end
@@ -64,20 +59,21 @@ defmodule Torrent.Peer do
 
     message = socket |> Torrent.Stream.recv_byte!(1)
     request_length = message |> :binary.bin_to_list |> Enum.at(0)
-    %{
+
+    answer = %{
       pstrlen: request_length,
-      pstr: socket |> Torrent.Stream.recv_byte!(request_length),
-      placeholder: socket |> Torrent.Stream.recv_byte!(8),
-      info_hash: socket |> Torrent.Stream.recv_byte!(20),
-      peer_id: socket |> Torrent.Stream.recv_byte!(20)
+      pstr: Torrent.Stream.recv_byte!(socket, request_length),
+      placeholder: Torrent.Stream.recv_byte!(socket, 8),
+      info_hash: Torrent.Stream.recv_byte!(socket, 20),
+      peer_id: Torrent.Stream.recv_byte!(socket, 20)
     }
+    { answer[:info_hash], nil }
   end
 
   defp generate_handshake(sha_info_hash) do
     # The Number 19 followed by the Protocol String
     << 19, "BitTorrent protocol" :: binary >> <>
-    # add 8 Zeros and the SHA Hash from the Tracker info, 20 Bytes long
-    << 0, 0, 0, 0, 0, 0, 0, 0, sha_info_hash :: binary, >> <>
+    << 0, 0, 0, 0, 0, 20, 0, 0, sha_info_hash :: binary, >> <>
     # some Peer ID, also 20 Bytes long
     << generate_peer_id() :: binary >>
   end

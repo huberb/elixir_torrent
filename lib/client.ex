@@ -3,29 +3,30 @@ defmodule Torrent.Client do
   def connect(meta_info, output_path) do
     Process.flag(:trap_exit, true)
 
-    # requester_pid = Torrent.Request.start_link(meta_info)
-    # writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
-    # output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
-    # 
-    # info_structs = %{
-    #   meta_info: meta_info, 
-    #   writer_pid: writer_pid,
-    #   requester_pid: requester_pid
-    # }
+    requester_pid = Torrent.Request.start_link(meta_info)
+    writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
+    output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
+     
+    info_structs = %{
+      meta_info: meta_info, 
+      writer_pid: writer_pid,
+      requester_pid: requester_pid
+    }
     
     meta_info
     |> Torrent.Tracker.request
-    # |> connect_all_peers(info_structs)
+    |> connect_all_peers(info_structs)
   end
 
   def connect_all_peers(tracker_resp, info_structs) do
-    tracker_resp["peers"]
-    |> Torrent.Parser.parse_all_peers
-    |> Enum.map(fn(p) -> 
-      Map.put(info_structs, :peer, p)
-      |> Torrent.Peer.connect
-    end)
-    |> manage_peers(info_structs[:requester_pid])
+    peers = Torrent.Parser.parse_all_peers(tracker_resp[:peers])
+
+    peer_pids = Enum.map(peers, fn(p) -> 
+                  Map.put(info_structs, :peer, p)
+                  |> Torrent.Peer.connect
+                end)
+
+    manage_peers(peer_pids, info_structs[:requester_pid])
   end
 
   def manage_peers(peer_pids, requester_pid) do

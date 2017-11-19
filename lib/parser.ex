@@ -29,18 +29,18 @@ defmodule Torrent.Parser do
   end
 
   def parse_magnet(magnet_link) do
-    magnet_parts = magnet_link 
-                   |> URI.decode 
-                   |> String.split("&") 
+    magnet_parts = magnet_link
+                   |> URI.decode
+                   |> String.split("&")
                    |> parse_magnet_parts([])
 
-    announce_list = Enum.filter(magnet_parts, &(elem(&1, 0) == "tr" ) ) 
+    announce_list = Enum.filter(magnet_parts, &(elem(&1, 0) == "tr" ) )
                     |> Enum.map(&(elem(&1, 1)))
 
     announce = Enum.at(announce_list, 0)
 
     hash = Enum.filter(magnet_parts, &(elem(&1, 0) == "magnet:?xt" ) )
-           |> Enum.map(&(elem(&1, 1)))
+           |> Enum.map( &(elem(&1, 1)) )
            |> Enum.at(0)
            |> String.trim("urn:btih:")
            |> String.upcase
@@ -49,7 +49,7 @@ defmodule Torrent.Parser do
 
     %{
       announce: announce,
-      "announce-list": announce_list,
+      announce_list: announce_list,
       hash: hash
     }
   end
@@ -66,7 +66,7 @@ defmodule Torrent.Parser do
 
   def parse_all_peers(peer_list) do
     # the delete_at(0) is to delete my own ip
-    peer_list 
+    peers = peer_list 
     |> :binary.bin_to_list
     |> Enum.split(6)
     |> Tuple.to_list
@@ -75,8 +75,7 @@ defmodule Torrent.Parser do
     |> Enum.chunk(6)
     |> Enum.map(&parse_peer/1) 
 
-            # this is a development hack to debug a low number of peers
-            # peers |> Enum.take(10)
+    peers |> Enum.take(3)
   end
 
   defp parse_peer(peer) do
