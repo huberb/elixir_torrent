@@ -62,7 +62,7 @@ defmodule Torrent.Tracker do
     uploaded = 0
     left = 10000
 
-    packet = conn_id # hard coded protocol id
+    conn_id
     <> << index(@action_ids, :announce) :: 32 >> # action
     <> << trans_id :: 32 >>
     <> info_hash

@@ -36,8 +36,6 @@ defmodule Torrent.Peer do
 
     verify_checksum(info_hash, info_structs[:meta_info])
     
-    # peer_ip = answer[:peer_ip]
-    # info_structs = put_in(info_structs, [:peer_ip], peer_ip)
     socket |> Torrent.Stream.leech(info_structs)
   end
 
@@ -67,7 +65,7 @@ defmodule Torrent.Peer do
       info_hash: Torrent.Stream.recv_byte!(socket, 20),
       peer_id: Torrent.Stream.recv_byte!(socket, 20)
     }
-    { answer[:info_hash], nil }
+    { answer[:info_hash], Torrent.Parser.peer_extensions(answer[:placeholder]) }
   end
 
   defp generate_handshake(sha_info_hash) do

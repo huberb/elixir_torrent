@@ -4,12 +4,12 @@ defmodule Torrent.Client do
     Process.flag(:trap_exit, true)
 
     requester_pid = Torrent.Request.start_link(meta_info)
-    writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
-    output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
+    # writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
+    # output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
      
     info_structs = %{
       meta_info: meta_info, 
-      writer_pid: writer_pid,
+      # writer_pid: writer_pid,
       requester_pid: requester_pid
     }
     

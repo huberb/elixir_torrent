@@ -11,22 +11,35 @@ defmodule Torrent.Request do
   def start_link(meta_info) do
     { _, pid } = Task.start_link(fn ->
 
-      num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
-      num_blocks = Torrent.Filehandler.num_blocks(meta_info[:info])
-      last_block_size = Torrent.Filehandler.last_block_size(meta_info[:info])
-
-      meta_info = meta_info |> Map.put(:num_pieces, num_pieces)
-      meta_info = meta_info |> Map.put(:num_blocks, num_blocks)
-      meta_info = meta_info |> Map.put(:last_block_size, last_block_size)
-
-      piece_struct =
-        0..num_pieces - 1
-        |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
-        |> Map.new
-
-      manage_requests(piece_struct, %{}, meta_info)
+      if meta_info[:info] != nil do
+        meta_info = received_meta_info(meta_info)
+        piece_struct = create_piece_struct(meta_info)
+        manage_requests(piece_struct, %{}, meta_info)
+      else
+        wait_for_meta_info(meta_info)
+      end
     end)
     pid
+  end
+
+  def wait_for_meta_info(meta_info) do
+  end
+
+  def create_piece_struct(meta_info) do
+    0..meta_info[:num_pieces] - 1
+    |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
+    |> Map.new
+  end
+
+  def received_meta_info(meta_info) do
+    num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
+    num_blocks = Torrent.Filehandler.num_blocks(meta_info[:info])
+    last_block_size = Torrent.Filehandler.last_block_size(meta_info[:info])
+
+    meta_info 
+    |> put_in([:num_pieces], num_pieces)
+    |> put_in([:num_blocks], num_blocks)
+    |> put_in([:last_block_size], last_block_size)
   end
 
   def manage_requests(piece_struct, peer_struct, meta_info) do

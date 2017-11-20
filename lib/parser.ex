@@ -75,7 +75,16 @@ defmodule Torrent.Parser do
     |> Enum.chunk(6)
     |> Enum.map(&parse_peer/1) 
 
-    peers |> Enum.take(3)
+    peers |> Enum.take(20)
+  end
+
+  def peer_extensions(options) do
+    use Bitwise
+    options_dec = :binary.decode_unsigned(options)
+    extensions = :math.pow(2, 20) |> trunc
+    %{
+      extensions: (options_dec &&& extensions) != 0
+    }
   end
 
   defp parse_peer(peer) do

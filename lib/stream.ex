@@ -13,12 +13,21 @@ defmodule Torrent.Stream do
     { 20, :extension },
   ]
 
-  def ask_for_meta_info(socket) do
+  def ask_for_meta_info(socket, extension_hash) do
+    meta_info_message_index = extension_hash["m"]["ut_metadata"]
+    meta_info_length = extension_hash["metadata_size"]
+    payload = %{ "msg_type": 0, "piece": 0 } |> Bencoder.encode
+    payload_size = byte_size payload
+    id = 20
+    len = payload_size
+    packet = << len :: 32 >> <> << id :: 8 >> <> << payload :: binary >>
+    require IEx
+    IEx.pry
+    Socket.Stream.send(socket, packet)
   end
 
   def leech(socket, info_structs) do
-    socket |> send_interested
-    |> pipe_message(info_structs)
+    pipe_message(socket, info_structs)
   end
 
   def send_interested(socket) do
@@ -72,11 +81,13 @@ defmodule Torrent.Stream do
 
   def extension(socket, len, info_structs) do
     id = recv_byte!(socket, 1) |> :binary.bin_to_list |> Enum.at(0)
-    if id == 0 do # extension handshake
-      len = recv_byte!(socket, len - 2)
-      require IEx
-      IEx.pry
+    message = recv_byte!(socket, len - 2)
+    message = Bencoder.decode(message)
+    if message["m"]["ut_metadata"] != nil do
+      ask_for_meta_info(socket, message)
     end
+    require IEx
+    IEx.pry
     pipe_message(socket, info_structs)
   end
 
