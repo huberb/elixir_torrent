@@ -16,13 +16,17 @@ defmodule Torrent.Stream do
   def ask_for_meta_info(socket, extension_hash) do
     meta_info_message_index = extension_hash["m"]["ut_metadata"]
     meta_info_length = extension_hash["metadata_size"]
-    id = 20
+    bittorrent_id = 20
+    metadata_id = extension_hash["m"]["ut_metadata"]
 
     payload = %{ "msg_type": 0, "piece": 0 } |> Bencoder.encode
-    len = byte_size(payload)
-    packet = << len :: 32 >> 
-             <> << id :: 8 >> 
-             <> << payload :: binary >>
+    len = byte_size(payload) + 2
+
+    packet = 
+      << len :: 32 >> 
+      <> << bittorrent_id :: 8 >> 
+      <> << metadata_id :: 8 >> 
+      <> << payload :: binary >>
     Socket.Stream.send(socket, packet)
   end
 
@@ -117,10 +121,10 @@ defmodule Torrent.Stream do
 
     if id == 0 do # id 0 is a handshake message
       answer_extension_handshake(socket, handshake)
-    #   if handshake["m"]["ut_metadata"] != nil && info_structs[:meta_info][:info] == nil do
-    #     # IO.puts "sending request metainfo"
-    #     # ask_for_meta_info(socket, handshake)
-    #   end
+      if handshake["m"]["ut_metadata"] != nil do
+        IO.puts "sending request metainfo"
+        ask_for_meta_info(socket, handshake)
+      end
     end
     pipe_message(socket, info_structs)
   end
