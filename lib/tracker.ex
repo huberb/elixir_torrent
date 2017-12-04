@@ -17,7 +17,7 @@ defmodule Torrent.Tracker do
       query = tcp_query torrent
       case HTTPoison.get(query, [], [follow_redirect: true]) do
         {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-          Bencoder.decode(body) |> Torrent.Parser.keys_to_atom
+          Bento.decode!(body) |> Torrent.Parser.keys_to_atom
 
         {:ok, %HTTPoison.Response{status_code: 404}} ->
           IO.puts "Tracker not found :("

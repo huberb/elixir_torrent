@@ -21,7 +21,7 @@ defmodule Torrent.Stream do
       bittorrent_id = 20
       metadata_id = extension_hash["m"]["ut_metadata"]
 
-      payload = %{ "msg_type": 0, "piece": 0 } |> Bencoder.encode
+      payload = %{ "msg_type": 0, "piece": 0 } |> Bento.encode!
       len = byte_size(payload) + 2
 
       packet = 
@@ -96,7 +96,7 @@ defmodule Torrent.Stream do
     extensions = %{ 
       'm': %{ 'ut_metadata': @ut_metadata_id }, 
       'metadata_size': handshake["metadata_size"]
-    } |> Bencoder.encode
+    } |> Bento.encode!
 
     payload = << id :: 8 >> <> << extension_id :: 8 >> <> << extensions :: binary >>
     len = byte_size(payload)
@@ -113,7 +113,7 @@ defmodule Torrent.Stream do
     case id do
       0 -> # 0 is the handshake message
         handshake = recv_byte!(socket, len - 2)
-        handshake = Bencoder.decode(handshake)
+        handshake = Bento.decode!(handshake)
         answer_extension_handshake(socket, handshake)
         ask_for_meta_info(socket, handshake)
 
