@@ -114,7 +114,7 @@ defmodule Torrent.Filehandler do
   def verify_file_length(file_data, file_info, meta_info) do
     path = "#{file_info[:output_path]}/#{meta_info[:name]}"
     %{ size: size } = File.stat! path
-    if size != meta_info["length"] do
+    if size != meta_info[:length] do
       require IEx
       IEx.pry
       raise "Wrong Filesize!"

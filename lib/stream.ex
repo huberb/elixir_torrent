@@ -82,11 +82,13 @@ defmodule Torrent.Stream do
   end
 
   def answer_extension_handshake(socket, handshake) do
+    # TODO: this is broken, after sending the message the peer responds with nil
+    IO.puts handshake["metadata_size"]
     payload = %{ 
-      "m": %{ "ut_metadata" => 0 },
+      'm': %{'ut_metadata': 3}, 'metadata_size': handshake["metadata_size"]
     } |> Bencoder.encode
 
-    len = byte_size(payload) + 1
+    len = byte_size(payload) + 2
     id = 20
     extension_id = 0
 
@@ -96,6 +98,7 @@ defmodule Torrent.Stream do
   end
 
   def extension(socket, len, info_structs) do
+    # this is the id 0 -> extension handshake
     id = recv_byte!(socket, 1) |> :binary.bin_to_list |> Enum.at(0)
     IO.puts "got extension message with id: #{id}"
     if id != 0 do
@@ -104,14 +107,21 @@ defmodule Torrent.Stream do
     end
     handshake = recv_byte!(socket, len - 2)
     handshake = Bencoder.decode(handshake)
+    # example of a handshake after decoding
+    # %{"complete_ago" => 1, "e" => 1, "ipv4" => <<86, 153, 91, 149>>,
+    # %{"ipv6" => <<254, 128, 0, 0, 0, 0, 0, 0, 0, 220, 144, 3, 59, 73, 114, 81>>,
+    # %{"m" => %{"upload_only" => 3, "ut_comment" => 6, "ut_holepunch" => 4,
+    # %{  "ut_metadata" => 2, "ut_pex" => 1, "ut_recommend" => 5},
+    # %{"metadata_size" => 57840, "p" => 32022, "reqq" => 255,
+    # %{"v" => "µTorrent Mac 1.8.7", "yourip" => <<188, 194, 59, 95>>}
 
-    # if id == 0 do # id 0 is a handshake message
-    #   answer_extension_handshake(socket, handshake)
+    if id == 0 do # id 0 is a handshake message
+      answer_extension_handshake(socket, handshake)
     #   if handshake["m"]["ut_metadata"] != nil && info_structs[:meta_info][:info] == nil do
     #     # IO.puts "sending request metainfo"
     #     # ask_for_meta_info(socket, handshake)
     #   end
-    # end
+    end
     pipe_message(socket, info_structs)
   end
 
@@ -121,6 +131,7 @@ defmodule Torrent.Stream do
     # IO.puts "socket: #{info_structs[:peer] |> elem(0)}, id: #{id}"
 
     { id, flag } = List.keyfind(@message_flags, id, 0)
+    IO.puts flag
     case flag do
       :choke ->
         pipe_message(socket, info_structs)
