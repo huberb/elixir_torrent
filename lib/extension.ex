@@ -14,10 +14,19 @@ defmodule Torrent.Extension do
         ask_for_meta_info(socket, handshake)
 
       @ut_metadata_id -> # ut_metadata extension
-        info = Torrent.Stream.recv_byte!(socket, 44) |> Bento.decode!
-        require IEx
-        IEx.pry
+        recv_metadata_piece(socket, len)
 
+    end
+  end
+
+  def recv_metadata_piece(socket, len, binary \\ "") do
+    byte = Torrent.Stream.recv_byte!(socket, 1)
+    binary = binary <> byte
+    case Bento.decode(binary) do
+      { :error, _ } ->
+        recv_metadata_piece(socket, len, binary)
+      { :ok, message } ->
+        Torrent.Stream.recv_byte!(socket, len - byte_size(binary) - 2)
     end
   end
 
