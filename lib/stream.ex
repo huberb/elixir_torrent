@@ -1,5 +1,7 @@
 defmodule Torrent.Stream do
 
+  @ut_metadata_id 3
+
   @message_flags [
     { 0, :choke },
     { 1, :unchoke },
@@ -14,20 +16,22 @@ defmodule Torrent.Stream do
   ]
 
   def ask_for_meta_info(socket, extension_hash) do
-    meta_info_message_index = extension_hash["m"]["ut_metadata"]
-    meta_info_length = extension_hash["metadata_size"]
-    bittorrent_id = 20
-    metadata_id = extension_hash["m"]["ut_metadata"]
+    if extension_hash["m"]["ut_metadata"] != nil do
+      IO.puts "sending request metainfo"
+      bittorrent_id = 20
+      metadata_id = extension_hash["m"]["ut_metadata"]
 
-    payload = %{ "msg_type": 0, "piece": 0 } |> Bencoder.encode
-    len = byte_size(payload) + 2
+      payload = %{ "msg_type": 0, "piece": 0 } |> Bencoder.encode
+      len = byte_size(payload) + 2
 
-    packet = 
-      << len :: 32 >> 
-      <> << bittorrent_id :: 8 >> 
-      <> << metadata_id :: 8 >> 
-      <> << payload :: binary >>
-    Socket.Stream.send(socket, packet)
+      packet = 
+        << len :: 32 >> 
+        <> << bittorrent_id :: 8 >> 
+        <> << metadata_id :: 8 >> 
+        <> << payload :: binary >>
+
+      Socket.Stream.send(socket, packet)
+    end
   end
 
   def leech(socket, info_structs) do
@@ -86,46 +90,40 @@ defmodule Torrent.Stream do
   end
 
   def answer_extension_handshake(socket, handshake) do
-    # TODO: this is broken, after sending the message the peer responds with nil
-    IO.puts handshake["metadata_size"]
-    payload = %{ 
-      'm': %{'ut_metadata': 3}, 'metadata_size': handshake["metadata_size"]
-    } |> Bencoder.encode
-
-    len = byte_size(payload) + 2
     id = 20
     extension_id = 0
 
-    handshake = << len :: 32 >> <> << id :: 8 >> <> << extension_id :: 8 >> <> << payload :: binary >>
+    extensions = %{ 
+      'm': %{ 'ut_metadata': @ut_metadata_id }, 
+      'metadata_size': handshake["metadata_size"]
+    } |> Bencoder.encode
+
+    payload = << id :: 8 >> <> << extension_id :: 8 >> <> << extensions :: binary >>
+    len = byte_size(payload)
+
+    handshake = << len :: 32 >> <> payload
     IO.puts "extension handshake answer"
     Socket.Stream.send(socket, handshake)
   end
 
   def extension(socket, len, info_structs) do
-    # this is the id 0 -> extension handshake
     id = recv_byte!(socket, 1) |> :binary.bin_to_list |> Enum.at(0)
     IO.puts "got extension message with id: #{id}"
-    if id != 0 do
-      require IEx
-      IEx.pry
-    end
-    handshake = recv_byte!(socket, len - 2)
-    handshake = Bencoder.decode(handshake)
-    # example of a handshake after decoding
-    # %{"complete_ago" => 1, "e" => 1, "ipv4" => <<86, 153, 91, 149>>,
-    # %{"ipv6" => <<254, 128, 0, 0, 0, 0, 0, 0, 0, 220, 144, 3, 59, 73, 114, 81>>,
-    # %{"m" => %{"upload_only" => 3, "ut_comment" => 6, "ut_holepunch" => 4,
-    # %{  "ut_metadata" => 2, "ut_pex" => 1, "ut_recommend" => 5},
-    # %{"metadata_size" => 57840, "p" => 32022, "reqq" => 255,
-    # %{"v" => "µTorrent Mac 1.8.7", "yourip" => <<188, 194, 59, 95>>}
 
-    if id == 0 do # id 0 is a handshake message
-      answer_extension_handshake(socket, handshake)
-      if handshake["m"]["ut_metadata"] != nil do
-        IO.puts "sending request metainfo"
+    case id do
+      0 -> # 0 is the handshake message
+        handshake = recv_byte!(socket, len - 2)
+        handshake = Bencoder.decode(handshake)
+        answer_extension_handshake(socket, handshake)
         ask_for_meta_info(socket, handshake)
-      end
+
+      @ut_metadata_id -> # ut_metadata extension
+        data = recv_byte!(socket, len)
+        require IEx
+        IEx.pry
+
     end
+
     pipe_message(socket, info_structs)
   end
 
