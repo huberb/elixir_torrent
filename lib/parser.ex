@@ -75,7 +75,7 @@ defmodule Torrent.Parser do
     |> Enum.chunk(6)
     |> Enum.map(&parse_peer/1) 
 
-    peers |> Enum.take(40)
+    # peers |> Enum.take(40)
   end
 
   def peer_extensions(options) do

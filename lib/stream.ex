@@ -18,17 +18,12 @@ defmodule Torrent.Stream do
     meta_info_length = extension_hash["metadata_size"]
     id = 20
 
-    # this is buggy
-    # Enum.each(0..10, fn(i) -> 
-    # payload = %{ "msg_type": i, "piece": 0 } |> Bencoder.encode
     payload = %{ "msg_type": 0, "piece": 0 } |> Bencoder.encode
-    IO.puts "sending request for piece #{0} of metadata"
     len = byte_size(payload)
     packet = << len :: 32 >> 
              <> << id :: 8 >> 
              <> << payload :: binary >>
     Socket.Stream.send(socket, packet)
-      # end)
   end
 
   def leech(socket, info_structs) do
@@ -83,58 +78,41 @@ defmodule Torrent.Stream do
   def unchoke(socket, info_structs) do
     send info_structs[:requester_pid],
       { :state, info_structs[:peer], :unchoke }
-    if info_structs[:extension_handshake] && info_structs[:meta_info][:info] == nil do
-      ask_for_meta_info(socket, info_structs[:extension_handshake])
-    end
     pipe_message(socket, info_structs)
   end
 
-  def meta_info_bitfield(socket, info_structs, handshake) do
-    info_structs = put_in(info_structs, [:extension_handshake], handshake)
-    len = recv_32_bit_int(socket)
-    id = recv_8_bit_int(socket)
+  def answer_extension_handshake(socket, handshake) do
+    payload = %{ 
+      "m": %{ "ut_metadata" => 0 },
+    } |> Bencoder.encode
 
-    flag = List.keyfind(@message_flags, id, 0) |> elem(1)
-
-    # if this was not a bitfield flag, something went wrong and we abort
-    unless flag == :bitfield do
-      raise "expected a meta info bitfield after extension handshake"
-    end
-
-    bitfield = recv_byte!(socket, len - 1)
-    pipe_message(socket, info_structs)
-  end
-
-  def answer_extension_handshake(socket) do
-    # TODO: what extensions to support?
-    payload = %{ "m": "" } |> Bencoder.encode
-    id = 20
     len = byte_size(payload) + 1
+    id = 20
+    extension_id = 0
 
-    handshake = << len :: 32 >> <> << id :: 8 >> <> << 0 :: 8 >> <> << payload :: binary >>
+    handshake = << len :: 32 >> <> << id :: 8 >> <> << extension_id :: 8 >> <> << payload :: binary >>
     IO.puts "extension handshake answer"
-    require IEx
-    IEx.pry
     Socket.Stream.send(socket, handshake)
   end
 
   def extension(socket, len, info_structs) do
     id = recv_byte!(socket, 1) |> :binary.bin_to_list |> Enum.at(0)
-    # IO.puts "got extension message with id: #{id}"
-    if id == 1 do
+    IO.puts "got extension message with id: #{id}"
+    if id != 0 do
       require IEx
       IEx.pry
     end
     handshake = recv_byte!(socket, len - 2)
     handshake = Bencoder.decode(handshake)
 
-    if id == 0 do # id 0 is a handshake message
-      # after this we expect a meta info bitfield
-      answer_extension_handshake(socket)
-      meta_info_bitfield(socket, info_structs, handshake)
-    else # otherwise continue as usual
-      pipe_message(socket, info_structs)
-    end
+    # if id == 0 do # id 0 is a handshake message
+    #   answer_extension_handshake(socket, handshake)
+    #   if handshake["m"]["ut_metadata"] != nil && info_structs[:meta_info][:info] == nil do
+    #     # IO.puts "sending request metainfo"
+    #     # ask_for_meta_info(socket, handshake)
+    #   end
+    # end
+    pipe_message(socket, info_structs)
   end
 
   def pipe_message(socket, info_structs) do
