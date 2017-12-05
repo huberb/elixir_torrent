@@ -11,7 +11,7 @@ defmodule Torrent.Extension do
         binary_handshake = Torrent.Stream.recv_byte!(socket, len - 2)
         handshake = Bento.decode!(binary_handshake) |> Torrent.Parser.keys_to_atom
         answer_extension_handshake(socket, handshake)
-        ask_for_meta_info(socket, handshake)
+        check_metadata_request(socket, handshake, info_structs)
         { :handshake, handshake }
 
       @ut_metadata_id -> # only extension we support
@@ -66,8 +66,11 @@ defmodule Torrent.Extension do
     Socket.Stream.send(socket, packet)
   end
 
-  def ask_for_meta_info(socket, extension_hash) do
-    if extension_hash[:m][:ut_metadata] != nil do
+  def check_metadata_request(socket, extension_hash, info_structs) do
+    # only request if the peer supports ut_metadata and we dont have the metainfo yet
+    ut_metadata_support = extension_hash[:m][:ut_metadata] != nil
+    need_metadata = info_structs[:meta_info][:info] |> Enum.empty?
+    if ut_metadata_support && need_metadata do
       ask_for_meta_info(socket, extension_hash, 0)
     end
   end

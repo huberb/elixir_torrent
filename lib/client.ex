@@ -63,7 +63,7 @@ defmodule Torrent.Client do
 
   def send_metadata_to_peers(peer_pids, info, info_structs) do
     Enum.each(peer_pids, fn(pid) ->
-      send pid, { :meta_info, info }
+      # send pid, { :meta_info, info }
     end)
     send info_structs[:requester_pid], { :meta_info, info }
     send info_structs[:writer_pid], { :meta_info, info }

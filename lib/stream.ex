@@ -13,30 +13,44 @@ defmodule Torrent.Stream do
     { 20, :extension },
   ]
 
-  def leech(socket, info_structs, options) do
-    # if we dont have the meta info
-    # and the peer does not support ut_metadata
-    # we wait for other peers to send the metadata
-    if info_structs[:meta_info][:info] == nil && !options[:extensions] do
-      receive do
-        { :meta_info, info } ->
-          info_structs = put_in(info_structs, [:meta_info][:info], info)
-          send_interested(socket)
-          pipe_message(socket, info_structs)
-      end
-    # otherwise, leech
-    else
-      send_interested(socket)
-      pipe_message(socket, info_structs)
+  # TODO: use this
+  # if we dont have metadata and the peer does not support ut_metadata extension,
+  # we need to wait for other peers to send the metadata
+  # thing is, all peers support the extension
+  # so it actually works if every connection downloads its own metadata
+  # but yeah, its bad
+  def wait_for_metadata(info_structs) do
+    IO.puts "waiting for metadata"
+    receive do
+      { :meta_info, info } ->
+        IO.puts "peer received metadata from parent"
+        put_in(info_structs, [:meta_info, :info], info)
     end
   end
 
+  def leech(socket, info_structs, options) do
+    # keep the count of received messages, unused
+    info_structs = put_in(info_structs, [:message_count], 0)
+
+    # check if we have meta info, if not set a empty list
+    info_structs = 
+      cond do
+        info_structs[:meta_info][:info] == nil ->
+          put_in(info_structs, [:meta_info, :info], [])
+        true -> 
+          info_structs
+      end
+
+    send_interested(socket)
+    pipe_message(socket, info_structs)
+  end
+
   def send_interested(socket) do
-    IO.puts "sending interested message"
-    # len 1, id 2
-    message = [0,0,0,1,2] |> :binary.list_to_bin
+    # IO.puts "sending interested message"
+    len = 1
+    { id, flag } = List.keyfind(@message_flags, :interested, 1)
+    message = << len :: 32 >> <> << id :: 8 >>
     socket |> Socket.Stream.send(message)
-    # IO.puts "send interested message"
     socket
   end
 
@@ -81,23 +95,7 @@ defmodule Torrent.Stream do
     pipe_message(socket, info_structs)
   end
 
-  def wait_for_metadata(info_structs) do
-    IO.puts "waiting for metadata"
-    receive do
-      { :meta_info, info } ->
-        put_in(info_structs, [:meta_info, :info], info)
-    end
-  end
-
   def extension(socket, len, info_structs) do
-    info_structs = 
-      cond do
-        info_structs[:meta_info][:info] == nil ->
-          put_in(info_structs, [:meta_info, :info], [])
-        true -> 
-          info_structs
-      end
-
     info_structs = 
       case Torrent.Extension.pipe_message(socket, len, info_structs) do
         { :handshake, extension_hash } -> 
@@ -112,6 +110,9 @@ defmodule Torrent.Stream do
   end
 
   def pipe_message(socket, info_structs) do
+    # count up messages, unused
+    info_structs = update_in(info_structs, [:message_count], &(&1 + 1))
+
     len = socket |> recv_32_bit_int
     id = socket |> recv_8_bit_int
     # IO.puts "socket: #{info_structs[:peer] |> elem(0)}, id: #{id}"
@@ -138,8 +139,6 @@ defmodule Torrent.Stream do
         cancel()
       :extension -> # extension for metadata transfer
         extension(socket, len, info_structs)
-      nil ->
-        exit(:normal)
     end
   end
 

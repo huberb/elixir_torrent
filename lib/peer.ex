@@ -18,7 +18,7 @@ defmodule Torrent.Peer do
         if e.message == "timeout" do
           # IO.puts "got a Timeout on IP: " <> ip
           if count == 5 do
-            # IO.puts "fifth try on IP " <> ip <> " ... stopping now!"
+            IO.puts "fifth try on IP " <> ip <> " ... stopping now!"
             exit(:normal)
           else
             connect(ip, port, count + 1)
