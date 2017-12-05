@@ -5,7 +5,6 @@ defmodule Torrent.Extension do
 
   def pipe_message(socket, len, info_structs) do
     id = Torrent.Stream.recv_byte!(socket, 1) |> :binary.bin_to_list |> Enum.at(0)
-    IO.puts "got extension message with id: #{id}"
 
     case id do
       0 -> # 0 is the handshake message
@@ -15,14 +14,16 @@ defmodule Torrent.Extension do
         ask_for_meta_info(socket, handshake)
         { :handshake, handshake["metadata_size"] }
 
-      @ut_metadata_id ->
+      @ut_metadata_id -> # only extension we support
         { header, data } = recv_metadata_piece(socket, len) 
         metadata_pieces = info_structs[:meta_info][:info] ++ [{ header, data }]
         current_len = metadata_pieces |> compile_metadata |> byte_size
 
         if current_len == info_structs[:meta_info][:metadata_length] do
-          metadata = compile_metadata(metadata_pieces) |> Bento.decode!
-          { :meta_info, metadata }
+          info = compile_metadata(metadata_pieces) 
+                     |> Bento.decode! 
+                     |> Torrent.Parser.keys_to_atom
+          { :meta_info, info }
         else
           { :downloading, { header, data } }
         end
@@ -43,7 +44,6 @@ defmodule Torrent.Extension do
       { :error, _ } ->
         recv_metadata_piece(socket, len, header)
       { :ok, compiled_header } ->
-        IO.inspect header
         data = Torrent.Stream.recv_byte!(socket, len - byte_size(header) - 2)
         { compiled_header, data }
     end
@@ -62,13 +62,11 @@ defmodule Torrent.Extension do
     len = byte_size(payload)
 
     packet = << len :: 32 >> <> payload
-    IO.puts "extension handshake answer"
     Socket.Stream.send(socket, packet)
   end
 
   def ask_for_meta_info(socket, extension_hash) do
     if extension_hash["m"]["ut_metadata"] != nil do
-      IO.puts "sending request metainfo"
       ask_for_meta_info(socket, extension_hash, 0)
     end
   end

@@ -34,6 +34,7 @@ defmodule Torrent.Filehandler do
       tracker_info[:info] == nil ->
         receive do
           { :meta_info, info } ->
+            IO.puts "Filehandler got the metadata"
             info
         end
       tracker_info[:info] != nil ->

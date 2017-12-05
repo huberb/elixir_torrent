@@ -16,13 +16,22 @@ defmodule Torrent.Request do
         piece_struct = create_piece_struct(meta_info)
         manage_requests(piece_struct, %{}, meta_info)
       else
-        wait_for_meta_info(meta_info)
+        meta_info = wait_for_meta_info(meta_info) |> received_meta_info
+        piece_struct = create_piece_struct(meta_info)
+        manage_requests(piece_struct, %{}, meta_info)
       end
     end)
     pid
   end
 
   def wait_for_meta_info(meta_info) do
+    # if we dont have the metainfo
+    # we wait for a peer to send it to us
+    receive do
+      { :meta_info, info } ->
+        IO.puts "Requester got the meta info"
+        put_in(meta_info, [:info], info)
+    end
   end
 
   def create_piece_struct(meta_info) do
@@ -120,7 +129,6 @@ defmodule Torrent.Request do
             { piece_struct, peer_struct }
 
           peer_ip -> # found one good peer for request
-            # IO.puts "sending request for piece #{index} to #{ip}"
             peer_struct[peer_ip][:socket] 
             |> send_piece_request(index, 0, meta_info, :request)
             {

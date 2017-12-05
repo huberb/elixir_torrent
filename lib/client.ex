@@ -27,36 +27,39 @@ defmodule Torrent.Client do
                   |> Torrent.Peer.connect
                 end)
 
-    manage_peers(peer_pids, info_structs[:requester_pid])
+    manage_peers(peer_pids, info_structs)
   end
 
-  def manage_peers(peer_pids, requester_pid) do
+  def manage_peers(peer_pids, info_structs) do
     if length(peer_pids) != 0 do
       receive do
         { :EXIT, from, :normal } ->
           peer_pids = remove_peer(peer_pids, from)
-          manage_peers(peer_pids, requester_pid)
+          manage_peers(peer_pids, info_structs)
 
         { :meta_info, meta_info, from } ->
-          send_metadata_to_peers(peer_pids, meta_info, from)
-          manage_peers(peer_pids, requester_pid)
+          IO.puts "client received metadata"
+          send_metadata_to_peers(peer_pids, meta_info, info_structs)
+          manage_peers(peer_pids, info_structs)
 
         { :output, pid } ->
           send pid, { :peers, peer_pids |> length }
-          manage_peers(peer_pids, requester_pid)
+          manage_peers(peer_pids, info_structs)
 
         { :finished } ->
-          Process.exit(requester_pid, :kill)
+          Process.exit(info_structs[:requester_pid], :kill)
           Enum.each(peer_pids, &(Process.exit(&1, :kill)))
           IO.puts "shutting down!"
       end
     end
   end
 
-  def send_metadata_to_peers(peer_pids, meta_info, from) do
+  def send_metadata_to_peers(peer_pids, info, info_structs) do
     Enum.each(peer_pids, fn(pid) ->
-      IO.puts "sending metainfo to pid"
+      send pid, { :meta_info, info }
     end)
+    send info_structs[:requester_pid], { :meta_info, info}
+    send info_structs[:writer_pid], { :meta_info, info}
   end
 
   def remove_peer(peer_pids, pid) do

@@ -13,9 +13,22 @@ defmodule Torrent.Stream do
     { 20, :extension },
   ]
 
-  def leech(socket, info_structs) do
-    send_interested(socket)
-    pipe_message(socket, info_structs)
+  def leech(socket, info_structs, options) do
+    # if we dont have the meta info
+    # and the peer does not support ut_metadata
+    # we wait for other peers to send the metadata
+    if info_structs[:meta_info][:info] == nil && !options[:extensions] do
+      receive do
+        { :meta_info, info } ->
+          info_structs = put_in(info_structs, [:meta_info][:info], info)
+          send_interested(socket)
+          pipe_message(socket, info_structs)
+      end
+    # otherwise, leech
+    else
+      send_interested(socket)
+      pipe_message(socket, info_structs)
+    end
   end
 
   def send_interested(socket) do

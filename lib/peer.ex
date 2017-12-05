@@ -36,7 +36,7 @@ defmodule Torrent.Peer do
 
     verify_checksum(info_hash, info_structs[:meta_info])
     
-    socket |> Torrent.Stream.leech(info_structs)
+    socket |> Torrent.Stream.leech(info_structs, options)
   end
 
   def verify_checksum(foreign_hash, meta_info) do
