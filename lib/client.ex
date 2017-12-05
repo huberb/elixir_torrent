@@ -5,10 +5,11 @@ defmodule Torrent.Client do
 
     requester_pid = Torrent.Request.start_link(meta_info)
     writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
-    # output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
+    output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
      
     info_structs = %{
       meta_info: meta_info, 
+      output_pid: output_pid, 
       writer_pid: writer_pid,
       requester_pid: requester_pid
     }
@@ -37,10 +38,16 @@ defmodule Torrent.Client do
           peer_pids = remove_peer(peer_pids, from)
           manage_peers(peer_pids, info_structs)
 
-        { :meta_info, meta_info, from } ->
-          IO.puts "client received metadata"
-          send_metadata_to_peers(peer_pids, meta_info, info_structs)
-          manage_peers(peer_pids, info_structs)
+        { :meta_info, info, from } ->
+          cond do
+            info_structs[:meta_info][:info] == nil ->
+              IO.puts "client received metadata"
+              info_structs = put_in(info_structs, [:meta_info, :info], info)
+              send_metadata_to_peers(peer_pids, info, info_structs)
+              manage_peers(peer_pids, info_structs)
+            true ->
+              manage_peers(peer_pids, info_structs)
+          end
 
         { :output, pid } ->
           send pid, { :peers, peer_pids |> length }
@@ -58,8 +65,9 @@ defmodule Torrent.Client do
     Enum.each(peer_pids, fn(pid) ->
       send pid, { :meta_info, info }
     end)
-    send info_structs[:requester_pid], { :meta_info, info}
-    send info_structs[:writer_pid], { :meta_info, info}
+    send info_structs[:requester_pid], { :meta_info, info }
+    send info_structs[:writer_pid], { :meta_info, info }
+    send info_structs[:output_pid], { :meta_info, info }
   end
 
   def remove_peer(peer_pids, pid) do

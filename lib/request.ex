@@ -68,7 +68,7 @@ defmodule Torrent.Request do
 
       { :received, index, from } ->
         { ip, _ } = from
-        IO.puts "received #{index}, from #{ip}"
+        # IO.puts "received #{index}, from #{ip}"
         piece_struct = put_in(piece_struct, [index, :state], :received)
         peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
         unless any_pending?(piece_struct) do

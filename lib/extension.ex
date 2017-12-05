@@ -9,17 +9,18 @@ defmodule Torrent.Extension do
     case id do
       0 -> # 0 is the handshake message
         binary_handshake = Torrent.Stream.recv_byte!(socket, len - 2)
-        handshake = Bento.decode!(binary_handshake)
+        handshake = Bento.decode!(binary_handshake) |> Torrent.Parser.keys_to_atom
         answer_extension_handshake(socket, handshake)
         ask_for_meta_info(socket, handshake)
-        { :handshake, handshake["metadata_size"] }
+        { :handshake, handshake }
 
       @ut_metadata_id -> # only extension we support
         { header, data } = recv_metadata_piece(socket, len) 
         metadata_pieces = info_structs[:meta_info][:info] ++ [{ header, data }]
         current_len = metadata_pieces |> compile_metadata |> byte_size
+        needed_len = info_structs[:extension_hash][:metadata_size]
 
-        if current_len == info_structs[:meta_info][:metadata_length] do
+        if current_len == needed_len do
           info = compile_metadata(metadata_pieces) 
                      |> Bento.decode! 
                      |> Torrent.Parser.keys_to_atom
@@ -55,7 +56,7 @@ defmodule Torrent.Extension do
 
     extensions = %{ 
       'm': %{ 'ut_metadata': @ut_metadata_id }, 
-      'metadata_size': extension_hash["metadata_size"]
+      'metadata_size': extension_hash[:metadata_size]
     } |> Bento.encode!
 
     payload = << id :: 8 >> <> << extension_id :: 8 >> <> << extensions :: binary >>
@@ -66,14 +67,14 @@ defmodule Torrent.Extension do
   end
 
   def ask_for_meta_info(socket, extension_hash) do
-    if extension_hash["m"]["ut_metadata"] != nil do
+    if extension_hash[:m][:ut_metadata] != nil do
       ask_for_meta_info(socket, extension_hash, 0)
     end
   end
 
   def ask_for_meta_info(socket, extension_hash, index) do
     bittorrent_id = 20
-    metadata_id = extension_hash["m"]["ut_metadata"]
+    metadata_id = extension_hash[:m][:ut_metadata]
     payload = %{ "msg_type": 0, "piece": index } |> Bento.encode!
     len = byte_size(payload) + 2
 
@@ -84,7 +85,7 @@ defmodule Torrent.Extension do
       <> << payload :: binary >>
 
     Socket.Stream.send(socket, packet)
-    num_pieces = extension_hash["metadata_size"] / @metadata_piece_length - 1
+    num_pieces = extension_hash[:metadata_size] / @metadata_piece_length - 1
     if index < num_pieces do
       ask_for_meta_info(socket, extension_hash, index + 1)
     end

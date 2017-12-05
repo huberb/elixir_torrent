@@ -81,6 +81,14 @@ defmodule Torrent.Stream do
     pipe_message(socket, info_structs)
   end
 
+  def wait_for_metadata(info_structs) do
+    IO.puts "waiting for metadata"
+    receive do
+      { :meta_info, info } ->
+        put_in(info_structs, [:meta_info, :info], info)
+    end
+  end
+
   def extension(socket, len, info_structs) do
     info_structs = 
       cond do
@@ -92,8 +100,8 @@ defmodule Torrent.Stream do
 
     info_structs = 
       case Torrent.Extension.pipe_message(socket, len, info_structs) do
-        { :handshake, metadata_length } -> 
-          put_in(info_structs, [:meta_info, :metadata_length], metadata_length)
+        { :handshake, extension_hash } -> 
+          put_in(info_structs, [:extension_hash], extension_hash)
         { :downloading, data } -> 
           update_in(info_structs, [:meta_info, :info], &(&1 ++ [data]))
         { :meta_info, info } -> 

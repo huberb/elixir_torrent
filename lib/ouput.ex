@@ -2,11 +2,25 @@ defmodule Torrent.Output do
 
   def start_link(parent, filehandler, meta_info) do
     { _, pid } = Task.start_link(fn ->
-      num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
-      output = %{ num_peers: 0, received: 0, max: num_pieces }
-      pipe_output(output, %{ parent: parent, filehandler: filehandler })
+      if meta_info[:info] != nil do
+        num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
+        output = %{ num_peers: 0, received: 0, max: num_pieces }
+        pipe_output(output, %{ parent: parent, filehandler: filehandler })
+      else
+        meta_info = wait_for_metadata(meta_info)
+        num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
+        output = %{ num_peers: 0, received: 0, max: num_pieces }
+        pipe_output(output, %{ parent: parent, filehandler: filehandler })
+      end
     end)
     pid
+  end
+
+  def wait_for_metadata(meta_info) do
+    receive do
+      { :meta_info, info } ->
+        put_in(meta_info, [:info], info)
+    end
   end
 
   def get_outputs_from_processes(output, count) do
