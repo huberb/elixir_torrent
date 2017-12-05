@@ -28,10 +28,11 @@ defmodule Torrent.Tracker do
           raise "TrackerError"
       end
     else
-      # TODO: parse announce on udp tracker
+      [ query, port ] = String.replace_prefix(torrent[:announce], "udp://", "")
+                        |> String.split(":")
+                        
+      port = String.to_integer(port)
       req = udp_query_for_connection_ip()
-      query = "tracker.leechers-paradise.org"
-      port = 6969
       udp_socket = Socket.UDP.open!(port)
       tracker = { query, port }
       Socket.Datagram.send(udp_socket, req, tracker)
