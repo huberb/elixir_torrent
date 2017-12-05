@@ -1,32 +1,51 @@
 defmodule Torrent.Extension do
 
   @ut_metadata_id 3
+  @metadata_piece_length 16384
 
-  def pipe_message(socket, len) do
+  def pipe_message(socket, len, info_structs) do
     id = Torrent.Stream.recv_byte!(socket, 1) |> :binary.bin_to_list |> Enum.at(0)
     IO.puts "got extension message with id: #{id}"
 
     case id do
       0 -> # 0 is the handshake message
-        handshake = Torrent.Stream.recv_byte!(socket, len - 2)
-        handshake = Bento.decode!(handshake)
+        binary_handshake = Torrent.Stream.recv_byte!(socket, len - 2)
+        handshake = Bento.decode!(binary_handshake)
         answer_extension_handshake(socket, handshake)
         ask_for_meta_info(socket, handshake)
+        { :handshake, handshake["metadata_size"] }
 
-      @ut_metadata_id -> # ut_metadata extension
-        recv_metadata_piece(socket, len)
+      @ut_metadata_id ->
+        { header, data } = recv_metadata_piece(socket, len) 
+        metadata_pieces = info_structs[:meta_info][:info] ++ [{ header, data }]
+        current_len = metadata_pieces |> compile_metadata |> byte_size
 
+        if current_len == info_structs[:meta_info][:metadata_length] do
+          metadata = compile_metadata(metadata_pieces) |> Bento.decode!
+          { :meta_info, metadata }
+        else
+          { :downloading, { header, data } }
+        end
     end
   end
 
-  def recv_metadata_piece(socket, len, binary \\ "") do
+  def compile_metadata(metadata_pieces) do
+    metadata_pieces 
+    |> Enum.sort_by(fn({ header, _ }) -> header["piece"] end)
+    |> Enum.map(fn({ _, data }) -> data end)
+    |> Enum.join("")
+  end
+
+  def recv_metadata_piece(socket, len, header \\ "") do
     byte = Torrent.Stream.recv_byte!(socket, 1)
-    binary = binary <> byte
-    case Bento.decode(binary) do
+    header = header <> byte
+    case Bento.decode(header) do
       { :error, _ } ->
-        recv_metadata_piece(socket, len, binary)
-      { :ok, message } ->
-        Torrent.Stream.recv_byte!(socket, len - byte_size(binary) - 2)
+        recv_metadata_piece(socket, len, header)
+      { :ok, compiled_header } ->
+        IO.inspect header
+        data = Torrent.Stream.recv_byte!(socket, len - byte_size(header) - 2)
+        { compiled_header, data }
     end
   end
 
@@ -50,21 +69,27 @@ defmodule Torrent.Extension do
   def ask_for_meta_info(socket, extension_hash) do
     if extension_hash["m"]["ut_metadata"] != nil do
       IO.puts "sending request metainfo"
-      bittorrent_id = 20
-      metadata_id = extension_hash["m"]["ut_metadata"]
-
-      payload = %{ "msg_type": 0, "piece": 0 } |> Bento.encode!
-      len = byte_size(payload) + 2
-
-      packet = 
-        << len :: 32 >> 
-        <> << bittorrent_id :: 8 >> 
-        <> << metadata_id :: 8 >> 
-        <> << payload :: binary >>
-
-      Socket.Stream.send(socket, packet)
+      ask_for_meta_info(socket, extension_hash, 0)
     end
   end
 
+  def ask_for_meta_info(socket, extension_hash, index) do
+    bittorrent_id = 20
+    metadata_id = extension_hash["m"]["ut_metadata"]
+    payload = %{ "msg_type": 0, "piece": index } |> Bento.encode!
+    len = byte_size(payload) + 2
+
+    packet = 
+      << len :: 32 >> 
+      <> << bittorrent_id :: 8 >> 
+      <> << metadata_id :: 8 >> 
+      <> << payload :: binary >>
+
+    Socket.Stream.send(socket, packet)
+    num_pieces = extension_hash["metadata_size"] / @metadata_piece_length - 1
+    if index < num_pieces do
+      ask_for_meta_info(socket, extension_hash, index + 1)
+    end
+  end
 
 end

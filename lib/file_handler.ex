@@ -1,30 +1,44 @@
 defmodule Torrent.Filehandler do
 
   def start_link(tracker_info, requester_pid, parent, output_path) do
-    meta_info = tracker_info[:info]
-
-    mkdir_tmp()
-    path = "#{output_path}/#{meta_info[:name]}"
-    File.rm(path)
-    File.touch(path)
-    { _, file } = :file.open(path, [:read, :write, :binary])
-
-    file_info = %{
-      pieces_needed: num_pieces(meta_info),
-      blocks_in_piece: num_blocks_in_piece(meta_info),
-      piece_info: meta_info[:pieces],
-      requester_pid: requester_pid,
-      parent_pid: parent,
-      output_path: output_path,
-      file: file,
-      piece_length: meta_info[:"piece length"],
-      recv_pieces: []
-    }
 
     { _, pid } = Task.start_link(fn -> 
+
+      meta_info = get_or_wait_for_metadata(tracker_info)
+
+      mkdir_tmp()
+      path = "#{output_path}/#{meta_info[:name]}"
+      File.rm(path)
+      File.touch(path)
+      { _, file } = :file.open(path, [:read, :write, :binary])
+
+      file_info = %{
+        pieces_needed: num_pieces(meta_info),
+        blocks_in_piece: num_blocks_in_piece(meta_info),
+        piece_info: meta_info[:pieces],
+        requester_pid: requester_pid,
+        parent_pid: parent,
+        output_path: output_path,
+        file: file,
+        piece_length: meta_info[:"piece length"],
+        recv_pieces: []
+      }
+
       manage_files(%{}, file_info, meta_info)
     end)
     pid
+  end
+
+  def get_or_wait_for_metadata(tracker_info) do
+    cond do
+      tracker_info[:info] == nil ->
+        receive do
+          { :meta_info, info } ->
+            info
+        end
+      tracker_info[:info] != nil ->
+        tracker_info[:info]
+    end
   end
 
   defp manage_files(file_data, file_info, meta_info) do

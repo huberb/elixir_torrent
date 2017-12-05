@@ -5,7 +5,7 @@ defmodule Torrent.Client do
 
     requester_pid = Torrent.Request.start_link(meta_info)
     writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
-    output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
+    # output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
      
     info_structs = %{
       meta_info: meta_info, 
@@ -23,6 +23,7 @@ defmodule Torrent.Client do
 
     peer_pids = Enum.map(peers, fn(p) -> 
                   Map.put(info_structs, :peer, p)
+                  |> Map.put(:parent_pid, self())
                   |> Torrent.Peer.connect
                 end)
 
@@ -36,6 +37,10 @@ defmodule Torrent.Client do
           peer_pids = remove_peer(peer_pids, from)
           manage_peers(peer_pids, requester_pid)
 
+        { :meta_info, meta_info, from } ->
+          send_metadata_to_peers(peer_pids, meta_info, from)
+          manage_peers(peer_pids, requester_pid)
+
         { :output, pid } ->
           send pid, { :peers, peer_pids |> length }
           manage_peers(peer_pids, requester_pid)
@@ -45,9 +50,13 @@ defmodule Torrent.Client do
           Enum.each(peer_pids, &(Process.exit(&1, :kill)))
           IO.puts "shutting down!"
       end
-    else
-      # TODO: close filehandler and requester?
     end
+  end
+
+  def send_metadata_to_peers(peer_pids, meta_info, from) do
+    Enum.each(peer_pids, fn(pid) ->
+      IO.puts "sending metainfo to pid"
+    end)
   end
 
   def remove_peer(peer_pids, pid) do

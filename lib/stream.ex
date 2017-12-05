@@ -69,7 +69,24 @@ defmodule Torrent.Stream do
   end
 
   def extension(socket, len, info_structs) do
-    Torrent.Extension.pipe_message(socket, len)
+    info_structs = 
+      cond do
+        info_structs[:meta_info][:info] == nil ->
+          put_in(info_structs, [:meta_info, :info], [])
+        true -> 
+          info_structs
+      end
+
+    info_structs = 
+      case Torrent.Extension.pipe_message(socket, len, info_structs) do
+        { :handshake, metadata_length } -> 
+          put_in(info_structs, [:meta_info, :metadata_length], metadata_length)
+        { :downloading, data } -> 
+          update_in(info_structs, [:meta_info, :info], &(&1 ++ [data]))
+        { :meta_info, info } -> 
+          send info_structs[:parent_pid], { :meta_info, info, self() }
+          put_in(info_structs, [:meta_info, :info], info)
+      end
     pipe_message(socket, info_structs)
   end
 
@@ -79,7 +96,6 @@ defmodule Torrent.Stream do
     # IO.puts "socket: #{info_structs[:peer] |> elem(0)}, id: #{id}"
 
     { id, flag } = List.keyfind(@message_flags, id, 0)
-    IO.puts flag
     case flag do
       :choke ->
         pipe_message(socket, info_structs)
