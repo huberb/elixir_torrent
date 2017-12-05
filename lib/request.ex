@@ -8,36 +8,13 @@ defmodule Torrent.Request do
     @data_request_len
   end
 
-  def start_link(meta_info) do
+  def start_link() do
     { _, pid } = Task.start_link(fn ->
-
-      if meta_info[:info] != nil do
-        meta_info = received_meta_info(meta_info)
-        piece_struct = create_piece_struct(meta_info)
-        manage_requests(piece_struct, %{}, meta_info)
-      else
-        meta_info = wait_for_meta_info(meta_info) |> received_meta_info
-        piece_struct = create_piece_struct(meta_info)
-        manage_requests(piece_struct, %{}, meta_info)
-      end
+      meta_info = Torrent.Metadata.wait_for_metadata() |> received_meta_info
+      piece_struct = create_piece_struct(meta_info)
+      manage_requests(piece_struct, %{}, meta_info)
     end)
     pid
-  end
-
-  def wait_for_meta_info(meta_info) do
-    # if we dont have the metainfo
-    # we wait for a peer to send it to us
-    receive do
-      { :meta_info, info } ->
-        IO.puts "Requester got the meta info"
-        put_in(meta_info, [:info], info)
-    end
-  end
-
-  def create_piece_struct(meta_info) do
-    0..meta_info[:num_pieces] - 1
-    |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
-    |> Map.new
   end
 
   def received_meta_info(meta_info) do
@@ -111,6 +88,12 @@ defmodule Torrent.Request do
   def request(piece_struct, peer_struct, meta_info) do
     pieces = pieces_to_request(piece_struct, meta_info)
     request(piece_struct, peer_struct, meta_info, pieces)
+  end
+
+  def create_piece_struct(meta_info) do
+    0..meta_info[:num_pieces] - 1
+    |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
+    |> Map.new
   end
 
   def request(piece_struct, peer_struct, meta_info, pieces) do

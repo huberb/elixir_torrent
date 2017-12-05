@@ -1,63 +1,50 @@
 defmodule Torrent.Filehandler do
 
-  def start_link(tracker_info, requester_pid, parent, output_path) do
+  def start_link(requester_pid, parent, output_path) do
 
     { _, pid } = Task.start_link(fn -> 
 
-      meta_info = get_or_wait_for_metadata(tracker_info)
+      %{ info: info } = Torrent.Metadata.wait_for_metadata()
 
       mkdir_tmp()
-      path = "#{output_path}/#{meta_info[:name]}"
+      path = "#{output_path}/#{info[:name]}"
       File.rm(path)
       File.touch(path)
       { _, file } = :file.open(path, [:read, :write, :binary])
 
       file_info = %{
-        pieces_needed: num_pieces(meta_info),
-        blocks_in_piece: num_blocks_in_piece(meta_info),
-        piece_info: meta_info[:pieces],
+        pieces_needed: num_pieces(info),
+        blocks_in_piece: num_blocks_in_piece(info),
+        piece_info: info[:pieces],
         requester_pid: requester_pid,
         parent_pid: parent,
         output_path: output_path,
         file: file,
-        piece_length: meta_info[:"piece length"],
+        piece_length: info[:"piece length"],
         recv_pieces: []
       }
 
-      manage_files(%{}, file_info, meta_info)
+      manage_files(%{}, file_info, info)
     end)
     pid
   end
 
-  def get_or_wait_for_metadata(tracker_info) do
-    cond do
-      tracker_info[:info] == nil ->
-        receive do
-          { :meta_info, info } ->
-            IO.puts "Filehandler got the metadata"
-            info
-        end
-      tracker_info[:info] != nil ->
-        tracker_info[:info]
-    end
-  end
-
-  defp manage_files(file_data, file_info, meta_info) do
+  defp manage_files(file_data, file_info, info) do
     if download_complete?(file_info) do
       send file_info[:parent_pid], { :finished }
-      verify_file_length(file_data, file_info, meta_info)
+      verify_file_length(file_data, file_info, info)
     else
       receive do
         {:output, pid } ->
           send pid, { :received, length(file_info[:recv_pieces]) }
-          manage_files(file_data, file_info, meta_info)
+          manage_files(file_data, file_info, info)
 
         {:put, block, index, offset } ->
           if index in file_info[:recv_pieces] do # already have this
-            manage_files(file_data, file_info, meta_info)
+            manage_files(file_data, file_info, info)
           else
             { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
-            manage_files(file_data, file_info, meta_info)
+            manage_files(file_data, file_info, info)
           end
       end
     end

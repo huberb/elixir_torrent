@@ -3,9 +3,9 @@ defmodule Torrent.Client do
   def connect(meta_info, output_path) do
     Process.flag(:trap_exit, true)
 
-    requester_pid = Torrent.Request.start_link(meta_info)
-    writer_pid = Torrent.Filehandler.start_link(meta_info, requester_pid, self(), output_path)
-    output_pid = Torrent.Output.start_link(self(), writer_pid, meta_info)
+    requester_pid = Torrent.Request.start_link()
+    writer_pid = Torrent.Filehandler.start_link(requester_pid, self(), output_path)
+    output_pid = Torrent.Output.start_link(self(), writer_pid)
      
     info_structs = %{
       meta_info: meta_info, 
@@ -13,6 +13,9 @@ defmodule Torrent.Client do
       writer_pid: writer_pid,
       requester_pid: requester_pid
     }
+
+    metadata_pid = Torrent.Metadata.start_link(info_structs, meta_info)
+    info_structs = put_in(info_structs, [:metadata_pid], metadata_pid)
     
     meta_info
     |> Torrent.Tracker.request
@@ -37,17 +40,6 @@ defmodule Torrent.Client do
         { :EXIT, from, :normal } ->
           peer_pids = remove_peer(peer_pids, from)
           manage_peers(peer_pids, info_structs)
-
-        { :meta_info, info, from } ->
-          cond do
-            info_structs[:meta_info][:info] == nil ->
-              IO.puts "client received metadata"
-              info_structs = put_in(info_structs, [:meta_info, :info], info)
-              send_metadata_to_peers(peer_pids, info, info_structs)
-              manage_peers(peer_pids, info_structs)
-            true ->
-              manage_peers(peer_pids, info_structs)
-          end
 
         { :output, pid } ->
           send pid, { :peers, peer_pids |> length }
