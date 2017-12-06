@@ -9,9 +9,9 @@ defmodule Torrent.Parser do
       raise "No Torrent File"
     end
 
-    content = Bento.decode!(content) |> keys_to_atom
-    content = put_in(content, [:hash], 
-              content[:info] |> Bento.encode! |> sha_sum)
+    content = Bento.decode!(content)
+    hash = content["info"] |> Bento.encode! |> sha_sum
+    content |> keys_to_atom |> put_in([:hash], hash)
   end
 
   def keys_to_atom(map) do

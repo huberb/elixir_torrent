@@ -12,10 +12,10 @@ defmodule Torrent.Tracker do
   end
 
   def start_link(torrent) do
-    HTTPoison.start
     peers =
       cond do 
         String.starts_with?(torrent[:announce], "http") ->
+          HTTPoison.start
           tcp_request(torrent)
         String.starts_with?(torrent[:announce], "udp") ->
           udp_request(torrent)

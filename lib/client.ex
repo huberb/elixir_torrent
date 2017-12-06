@@ -6,8 +6,8 @@ defmodule Torrent.Client do
     self()                                      |> Process.register(:client)
     Torrent.Request.start_link()                |> Process.register(:request)
     Torrent.Filehandler.start_link(output_path) |> Process.register(:writer)
-    Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
     Torrent.Output.start_link()                 |> Process.register(:output)
+    Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
 
     { seeder_pid, port } = Torrent.Seeder.start_link()
     Process.register(seeder_pid, :seeder)
@@ -51,7 +51,7 @@ defmodule Torrent.Client do
 
         { :received, index } -> # piece is finished
           Enum.shuffle(peer_pids)
-          |> Enum.take(2) 
+          |> Enum.take(1) # TODO: how many?
           |> Enum.each(&(send(&1, { :received, index })))
           manage_peers(peer_pids, meta_info)
 

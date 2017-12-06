@@ -23,14 +23,32 @@ defmodule Torrent.Stream do
           info_structs
       end
 
-    send_interested(socket)
-    pipe_message(socket, info_structs)
+    socket
+    |> send_interested
+    |> send_unchoke
+    |> pipe_message(info_structs)
   end
 
   def send_interested(socket) do
     len = 1
     { id, _ } = List.keyfind(@message_flags, :interested, 1)
     message = << len :: 32 >> <> << id :: 8 >>
+    socket |> Socket.Stream.send(message)
+    socket
+  end
+
+  def send_unchoke(socket) do
+    len = 1
+    { id, _ } = List.keyfind(@message_flags, :unchoke, 1)
+    message = << len :: 32 >> <> << id :: 8 >>
+    socket |> Socket.Stream.send(message)
+    socket
+  end
+
+  def send_have(socket, index) do
+    len = 5
+    { id, _ } = List.keyfind(@message_flags, :have, 1)
+    message = << len :: 32 >> <> << id :: 8 >> <> << index :: 32 >>
     socket |> Socket.Stream.send(message)
     socket
   end
@@ -95,8 +113,8 @@ defmodule Torrent.Stream do
     unless Process.info(self)[:messages] |> Enum.empty? do
       receive do
         { :received, index } ->
-          # TODO: send have message
           IO.puts "sending have message"
+          send_have(socket, index)
           pipe_message(socket, info_structs)
         { :meta_info, meta_info } ->
           info_structs = put_in(info_structs, [:meta_info], meta_info)
@@ -113,6 +131,8 @@ defmodule Torrent.Stream do
         :unchoke ->
           unchoke(socket, info_structs)
         :interested ->
+          require IEx
+          IEx.pry
           pipe_message(socket, info_structs)
         :uninterested ->
           pipe_message(socket, info_structs)
