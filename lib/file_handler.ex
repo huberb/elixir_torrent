@@ -1,6 +1,6 @@
 defmodule Torrent.Filehandler do
 
-  def start_link(requester_pid, parent, output_path) do
+  def start_link(output_path) do
 
     { _, pid } = Task.start_link(fn -> 
 
@@ -16,8 +16,6 @@ defmodule Torrent.Filehandler do
         pieces_needed: num_pieces(info),
         blocks_in_piece: num_blocks_in_piece(info),
         piece_info: info[:pieces],
-        requester_pid: requester_pid,
-        parent_pid: parent,
         output_path: output_path,
         file: file,
         piece_length: info[:piece_length],
@@ -31,7 +29,7 @@ defmodule Torrent.Filehandler do
 
   defp manage_files(file_data, file_info, info) do
     if download_complete?(file_info) do
-      send file_info[:parent_pid], { :finished }
+      send :client, { :finished }
       verify_file_length(file_data, file_info, info)
     else
       receive do
@@ -76,7 +74,7 @@ defmodule Torrent.Filehandler do
     recv_block_len = file_data[index] |> Map.keys |> length
 
     if recv_block_len == file_info[:blocks_in_piece] do
-      send file_info[:requester_pid], { :received, index, from }
+      send :request, { :received, index, from }
       block = concat_block(file_data[index])
       Torrent.Parser.validate_block(file_info[:piece_info], index, block)
 

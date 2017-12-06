@@ -51,7 +51,7 @@ defmodule Torrent.Stream do
       len: len - 9,
       data: socket |> recv_byte!(len - 9)
     }
-    send info_structs[:writer_pid], { :put, block, index, offset }
+    send :writer, { :put, block, index, offset }
     pipe_message(socket, info_structs)
   end
 
@@ -60,7 +60,7 @@ defmodule Torrent.Stream do
                 |> recv_byte!(len - 1) 
                 |> Torrent.Parser.parse_bitfield
 
-    send info_structs[:requester_pid], 
+    send :request, 
       { :bitfield, info_structs[:peer], socket, piece_list }
 
     pipe_message(socket, info_structs)
@@ -68,13 +68,13 @@ defmodule Torrent.Stream do
 
   def have(socket, info_structs) do
     index = socket |> recv_32_bit_int
-    send info_structs[:requester_pid], 
+    send :request, 
       { :piece, info_structs[:peer], index }
     pipe_message(socket, info_structs)
   end
 
   def unchoke(socket, info_structs) do
-    send info_structs[:requester_pid],
+    send :request,
       { :state, info_structs[:peer], :unchoke }
     pipe_message(socket, info_structs)
   end
@@ -88,7 +88,7 @@ defmodule Torrent.Stream do
           update_in(info_structs, [:meta_info, :info], &(&1 ++ [data]))
         { :meta_info, info } -> 
           info_structs = put_in(info_structs, [:meta_info, :info], info)
-          send info_structs[:metadata_pid], { :meta_info, info_structs[:meta_info] }
+          send :metadata, { :meta_info, info_structs[:meta_info] }
           info_structs
       end
     pipe_message(socket, info_structs)

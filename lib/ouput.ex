@@ -1,11 +1,11 @@
 defmodule Torrent.Output do
 
-  def start_link(parent, filehandler) do
+  def start_link() do
     { _, pid } = Task.start_link(fn ->
       meta_info = Torrent.Metadata.wait_for_metadata()
       num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
       output = %{ num_peers: 0, received: 0, max: num_pieces }
-      pipe_output(output, %{ parent: parent, filehandler: filehandler })
+      pipe_output(output)
     end)
     pid
   end
@@ -26,10 +26,10 @@ defmodule Torrent.Output do
     end
   end
 
-  def pipe_output(output, processes) do
+  def pipe_output(output) do
     :timer.sleep(1000)
-    send processes[:parent], { :output, self() }
-    send processes[:filehandler], { :output, self() }
+    send :client, { :output, self() }
+    send :writer, { :output, self() }
 
     output = get_outputs_from_processes(output, 2)
 
@@ -42,7 +42,7 @@ defmodule Torrent.Output do
     # "
     IO.puts "peers: #{output[:num_peers]}, file: #{output[:received]} / #{output[:max]}"
 
-    pipe_output(output, processes)
+    pipe_output(output)
   end
 
 end

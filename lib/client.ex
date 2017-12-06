@@ -3,26 +3,18 @@ defmodule Torrent.Client do
   def connect(meta_info, output_path) do
     Process.flag(:trap_exit, true)
 
-    requester_pid = Torrent.Request.start_link()
-    writer_pid = Torrent.Filehandler.start_link(requester_pid, self(), output_path)
-    output_pid = Torrent.Output.start_link(self(), writer_pid)
-    seeder_pid = Torrent.Seeder.start_link()
+    self()                                      |> Process.register(:client)
+    Torrent.Request.start_link()                |> Process.register(:request)
+    Torrent.Filehandler.start_link(output_path) |> Process.register(:writer)
+    Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
+    Torrent.Output.start_link()                 |> Process.register(:output)
 
-    Process.register(requester_pid, :requester)
-     
-    info_structs = %{
-      meta_info: meta_info, 
-      output_pid: output_pid, 
-      writer_pid: writer_pid,
-      requester_pid: :requester
-    }
-
-    metadata_pid = Torrent.Metadata.start_link(info_structs, meta_info)
-    info_structs = put_in(info_structs, [:metadata_pid], metadata_pid)
+    { seeder_pid, port } = Torrent.Seeder.start_link()
+    Process.register(seeder_pid, :seeder)
     
     meta_info
     |> Torrent.Tracker.request
-    |> connect_all_peers(info_structs)
+    |> connect_all_peers( %{ meta_info: meta_info })
   end
 
   def connect_all_peers(tracker_resp, info_structs) do
@@ -31,7 +23,6 @@ defmodule Torrent.Client do
     peer_pids = Enum.map(peers, fn(p) -> 
                   info_structs
                   |> Map.put(:peer, p)
-                  |> Map.put(:parent_pid, self())
                   |> Torrent.Peer.connect
                 end)
 
@@ -50,7 +41,9 @@ defmodule Torrent.Client do
           manage_peers(peer_pids, info_structs)
 
         { :finished } ->
-          Process.exit(info_structs[:requester_pid], :kill)
+          Process.exit(:request, :kill)
+          Process.exit(:seeder, :kill)
+          Process.exit(:output, :kill)
           Enum.each(peer_pids, &(Process.exit(&1, :kill)))
           IO.puts "shutting down!"
       end
