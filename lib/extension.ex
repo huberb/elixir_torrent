@@ -15,18 +15,29 @@ defmodule Torrent.Extension do
         { :handshake, handshake }
 
       @ut_metadata_id -> # only extension we support
-        { header, data } = recv_metadata_piece(socket, len) 
-        metadata_pieces = info_structs[:meta_info][:info] ++ [{ header, data }]
-        current_len = metadata_pieces |> compile_metadata |> byte_size
-        needed_len = info_structs[:extension_hash][:metadata_size]
+        cond do
+          is_map(info_structs[:meta_info][:info]) -> # maybe we already got the metadata
+            # if yes, we pull the data anyway to free up for the next message
+            recv_metadata_piece(socket, len) 
+            # and send the metadata back
+            { :meta_info, info_structs[:meta_info][:info] }
+          is_list(info_structs[:meta_info][:info]) ->
+            # otherwise we pull we data
+            { header, data } = recv_metadata_piece(socket, len) 
+            # concat it with we data we already have
+            metadata_pieces = info_structs[:meta_info][:info] ++ [{ header, data }]
 
-        if current_len == needed_len do
-          info = compile_metadata(metadata_pieces) 
-                     |> Bento.decode! 
-                     |> Torrent.Parser.keys_to_atom
-          { :meta_info, info }
-        else
-          { :downloading, { header, data } }
+            # check if all is downloaded
+            current_len = metadata_pieces |> compile_metadata |> byte_size
+            needed_len = info_structs[:extension_hash][:metadata_size]
+            if current_len == needed_len do # we're finished
+              info = compile_metadata(metadata_pieces) 
+                         |> Bento.decode! 
+                         |> Torrent.Parser.keys_to_atom
+              { :meta_info, info }
+            else # still parts missing
+              { :downloading, { header, data } }
+            end
         end
     end
   end

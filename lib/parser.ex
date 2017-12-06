@@ -71,7 +71,7 @@ defmodule Torrent.Parser do
 
   def parse_all_peers(peer_list) do
     # the delete_at(0) is to delete my own ip
-    peers = peer_list 
+    peer_list 
     |> :binary.bin_to_list
     |> Enum.split(6)
     |> Tuple.to_list
@@ -79,8 +79,6 @@ defmodule Torrent.Parser do
     |> Enum.at(0)
     |> Enum.chunk(6)
     |> Enum.map(&parse_peer/1) 
-
-    # peers |> Enum.take(40)
   end
 
   def peer_extensions(options) do

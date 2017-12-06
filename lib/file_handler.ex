@@ -33,8 +33,8 @@ defmodule Torrent.Filehandler do
       verify_file_length(file_data, file_info, info)
     else
       receive do
-        {:output, pid } ->
-          send pid, { :received, length(file_info[:recv_pieces]) }
+        {:output } ->
+          send :output, { :received, length(file_info[:recv_pieces]) }
           manage_files(file_data, file_info, info)
 
         {:put, block, index, offset } ->
@@ -75,11 +75,11 @@ defmodule Torrent.Filehandler do
 
     if recv_block_len == file_info[:blocks_in_piece] do
       send :request, { :received, index, from }
+      send :client, { :received, index }
       block = concat_block(file_data[index])
       Torrent.Parser.validate_block(file_info[:piece_info], index, block)
 
       file_info = update_in(file_info, [:recv_pieces], &(&1 ++ [index]))
-
       file_data = add_piece(file_data, index, block, from)
       file_data = write_piece(file_data, file_info, index)
 

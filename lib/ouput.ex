@@ -28,8 +28,8 @@ defmodule Torrent.Output do
 
   def pipe_output(output) do
     :timer.sleep(1000)
-    send :client, { :output, self() }
-    send :writer, { :output, self() }
+    send :client, { :output }
+    send :writer, { :output }
 
     output = get_outputs_from_processes(output, 2)
 

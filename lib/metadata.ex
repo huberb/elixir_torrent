@@ -10,7 +10,9 @@ defmodule Torrent.Metadata do
         meta_info = wait_for_metadata()
         send_metadata(meta_info)
       else # we have the metadata
-        send_metadata(meta_info)
+        send :request, { :meta_info, meta_info }
+        send :writer, { :meta_info, meta_info }
+        send :output, { :meta_info, meta_info }
       end
       stay_alive()
     end)
@@ -26,6 +28,7 @@ defmodule Torrent.Metadata do
     send :request, { :meta_info, meta_info }
     send :writer, { :meta_info, meta_info }
     send :output, { :meta_info, meta_info }
+    send :client, { :meta_info, meta_info }
     IO.puts "send all metadata"
   end
 

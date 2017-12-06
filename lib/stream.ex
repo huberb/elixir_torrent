@@ -14,9 +14,6 @@ defmodule Torrent.Stream do
   ]
 
   def leech(socket, info_structs, options) do
-    # keep the count of received messages, unused
-    info_structs = put_in(info_structs, [:message_count], 0)
-
     # check if we have meta info, if not set a empty list
     info_structs = 
       cond do
@@ -95,35 +92,43 @@ defmodule Torrent.Stream do
   end
 
   def pipe_message(socket, info_structs) do
-    # count up messages, unused
-    info_structs = update_in(info_structs, [:message_count], &(&1 + 1))
+    unless Process.info(self)[:messages] |> Enum.empty? do
+      receive do
+        { :received, index } ->
+          # TODO: send have message
+          IO.puts "sending have message"
+          pipe_message(socket, info_structs)
+        { :meta_info, meta_info } ->
+          info_structs = put_in(info_structs, [:meta_info], meta_info)
+          pipe_message(socket, info_structs)
+      end
+    else
+      len = socket |> recv_32_bit_int
+      id = socket |> recv_8_bit_int
 
-    len = socket |> recv_32_bit_int
-    id = socket |> recv_8_bit_int
-    # IO.puts "socket: #{info_structs[:peer] |> elem(0)}, id: #{id}"
-
-    { _, flag } = List.keyfind(@message_flags, id, 0)
-    case flag do
-      :choke ->
-        pipe_message(socket, info_structs)
-      :unchoke ->
-        unchoke(socket, info_structs)
-      :interested ->
-        pipe_message(socket, info_structs)
-      :uninterested ->
-        pipe_message(socket, info_structs)
-      :have ->
-        have(socket, info_structs)
-      :bitfield ->
-        bitfield(socket, len, info_structs)
-      :request ->
-        pipe_message(socket, info_structs)
-      :piece ->
-        piece(socket, len, info_structs)
-      :cancel ->
-        cancel()
-      :extension -> # extension for metadata transfer
-        extension(socket, len, info_structs)
+      { _, flag } = List.keyfind(@message_flags, id, 0)
+      case flag do
+        :choke ->
+          pipe_message(socket, info_structs)
+        :unchoke ->
+          unchoke(socket, info_structs)
+        :interested ->
+          pipe_message(socket, info_structs)
+        :uninterested ->
+          pipe_message(socket, info_structs)
+        :have ->
+          have(socket, info_structs)
+        :bitfield ->
+          bitfield(socket, len, info_structs)
+        :request ->
+          pipe_message(socket, info_structs)
+        :piece ->
+          piece(socket, len, info_structs)
+        :cancel ->
+          cancel()
+        :extension -> # extension for metadata transfer
+          extension(socket, len, info_structs)
+      end
     end
   end
 

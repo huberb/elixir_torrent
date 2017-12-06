@@ -11,33 +11,57 @@ defmodule Torrent.Tracker do
     Enum.find_index(list, &(&1 == value))
   end
 
-  def request(torrent) do
+  def start_link(torrent) do
     HTTPoison.start
-    if String.starts_with?(torrent[:announce], "http") do
-      query = tcp_query torrent
-      case HTTPoison.get(query, [], [follow_redirect: true]) do
-        {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-          Bento.decode!(body) |> Torrent.Parser.keys_to_atom
-
-        {:ok, %HTTPoison.Response{status_code: 404}} ->
-          IO.puts "Tracker not found :("
-          raise "404"
-
-        {:error, %HTTPoison.Error{reason: reason}} ->
-          IO.inspect reason
-          raise "TrackerError"
+    peers =
+      cond do 
+        String.starts_with?(torrent[:announce], "http") ->
+          tcp_request(torrent)
+        String.starts_with?(torrent[:announce], "udp") ->
+          udp_request(torrent)
+        true ->
+          raise "this is no announce url"
       end
-    else
-      [ query, port ] = String.replace_prefix(torrent[:announce], "udp://", "")
-                        |> String.split(":")
-                        
-      port = String.to_integer(port)
-      req = udp_query_for_connection_ip()
-      udp_socket = Socket.UDP.open!(port)
-      tracker = { query, port }
-      Socket.Datagram.send(udp_socket, req, tracker)
-      conn_id = recv_connection_id(udp_socket)
-      udp_announce(udp_socket, conn_id, tracker, torrent[:hash])
+    { _, pid } = Task.start_link(fn ->
+      serve_peers(peers)
+    end)
+    { pid, peers }
+  end
+
+  def serve_peers(peers) do
+    receive do
+      { :get, from } ->
+        send from, peers
+    end
+    serve_peers(peers)
+  end
+
+  def udp_request(torrent) do
+    [ query, port ] = String.replace_prefix(torrent[:announce], "udp://", "")
+                      |> String.split(":")
+
+    port = String.to_integer(port)
+    req = udp_query_for_connection_ip()
+    udp_socket = Socket.UDP.open!(port)
+    tracker = { query, port }
+    Socket.Datagram.send(udp_socket, req, tracker)
+    conn_id = recv_connection_id(udp_socket)
+    udp_announce(udp_socket, conn_id, tracker, torrent[:hash])
+  end
+
+  def tcp_request(torrent) do
+    query = tcp_query torrent
+    case HTTPoison.get(query, [], [follow_redirect: true]) do
+      {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+        Bento.decode!(body) |> Torrent.Parser.keys_to_atom
+
+      {:ok, %HTTPoison.Response{status_code: 404}} ->
+        IO.puts "Tracker not found :("
+        raise "404"
+
+      {:error, %HTTPoison.Error{reason: reason}} ->
+        IO.inspect reason
+        raise "TrackerError"
     end
   end
 
