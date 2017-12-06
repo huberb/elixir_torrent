@@ -31,6 +31,9 @@ defmodule Torrent.Filehandler do
     if download_complete?(file_info) do
       send :client, { :finished }
       verify_file_length(file_data, file_info, info)
+      # even though we are done at this point,
+      # keep the process alive and let the client kill it when ready
+      # manage_files(file_data, file_info, info)
     else
       receive do
         {:output } ->

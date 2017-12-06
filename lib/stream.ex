@@ -25,7 +25,7 @@ defmodule Torrent.Stream do
 
     socket
     |> send_interested
-    |> send_unchoke
+    # |> send_unchoke
     |> pipe_message(info_structs)
   end
 
@@ -49,7 +49,7 @@ defmodule Torrent.Stream do
     len = 5
     { id, _ } = List.keyfind(@message_flags, :have, 1)
     message = << len :: 32 >> <> << id :: 8 >> <> << index :: 32 >>
-    socket |> Socket.Stream.send(message)
+    # socket |> Socket.Stream.send(message)
     socket
   end
 
@@ -72,8 +72,8 @@ defmodule Torrent.Stream do
 
   def bitfield(socket, len, info_structs) do
     piece_list = socket 
-                |> recv_byte!(len - 1) 
-                |> Torrent.Parser.parse_bitfield
+                 |> recv_byte!(len - 1) 
+                 |> Torrent.Parser.parse_bitfield
 
     send :request, 
       { :bitfield, info_structs[:peer], socket, piece_list }
@@ -109,21 +109,31 @@ defmodule Torrent.Stream do
     pipe_message(socket, info_structs)
   end
 
-  def pipe_message(socket, info_structs) do
-    unless Process.info(self)[:messages] |> Enum.empty? do
-      receive do
-        { :received, index } ->
-          IO.puts "sending have message"
-          send_have(socket, index)
-          pipe_message(socket, info_structs)
-        { :meta_info, meta_info } ->
-          info_structs = put_in(info_structs, [:meta_info], meta_info)
-          pipe_message(socket, info_structs)
-      end
-    else
-      len = socket |> recv_32_bit_int
-      id = socket |> recv_8_bit_int
+  def process_messages(socket, info_structs) do
+    cond do
+      length(Process.info(self)[:messages]) > 0 ->
+        receive do
+          { :received, index } ->
+            # IO.puts "sending have message"
+            send_have(socket, index)
+            info_structs
+          { :meta_info, meta_info } ->
+            put_in(info_structs, [:meta_info], meta_info)
+        end
 
+      true ->
+        info_structs
+    end
+  end
+
+  def pipe_message(socket, info_structs) do
+    info_structs = process_messages(socket, info_structs)
+    len = socket |> recv_32_bit_int
+
+    if len == 0 do # keep alive
+      pipe_message(socket, info_structs)
+    else
+      id = socket |> recv_8_bit_int
       { _, flag } = List.keyfind(@message_flags, id, 0)
       case flag do
         :choke ->
@@ -135,12 +145,16 @@ defmodule Torrent.Stream do
           IEx.pry
           pipe_message(socket, info_structs)
         :uninterested ->
+          require IEx
+          IEx.pry
           pipe_message(socket, info_structs)
         :have ->
           have(socket, info_structs)
         :bitfield ->
           bitfield(socket, len, info_structs)
         :request ->
+          require IEx
+          IEx.pry
           pipe_message(socket, info_structs)
         :piece ->
           piece(socket, len, info_structs)

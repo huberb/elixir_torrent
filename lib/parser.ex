@@ -9,7 +9,7 @@ defmodule Torrent.Parser do
       raise "No Torrent File"
     end
 
-    content = Bento.decode!(content)
+    content = Bento.decode! content
     hash = content["info"] |> Bento.encode! |> sha_sum
     content |> keys_to_atom |> put_in([:hash], hash)
   end
@@ -17,15 +17,15 @@ defmodule Torrent.Parser do
   def keys_to_atom(map) do
     if is_map(map) do
       map |> Enum.reduce(%{}, fn({key, val}, acc) -> 
-        key = String.replace(key, " ", "_")
+        key = String.replace key, " ", "_"
         cond do 
           is_binary(val) || is_integer(val) ->
-            put_in(acc, [String.to_atom(key)], val)
+            put_in acc, [String.to_atom(key)], val
           is_map(val) ->
-            put_in(acc, [String.to_atom(key)], keys_to_atom(val))
+            put_in acc, [String.to_atom(key)], keys_to_atom(val)
           is_list(val) ->
             new_list = Enum.map(val, &(keys_to_atom(&1)))
-            put_in(acc, [String.to_atom(key)], new_list)
+            put_in acc, [String.to_atom(key)], new_list
         end
       end)
     else
@@ -42,7 +42,7 @@ defmodule Torrent.Parser do
     announce_list = Enum.filter(magnet_parts, &(elem(&1, 0) == "tr" ) )
                     |> Enum.map(&(elem(&1, 1)))
 
-    announce = Enum.at(announce_list, 0)
+    announce = Enum.at announce_list, 0
 
     hash = Enum.filter(magnet_parts, &(elem(&1, 0) == "magnet:?xt" ) )
            |> Enum.map( &(elem(&1, 1)) )
@@ -63,9 +63,9 @@ defmodule Torrent.Parser do
     if Enum.empty?(parts) do
       list
     else
-      { part, parts }  = List.pop_at(parts, 0)
+      { part, parts }  = List.pop_at parts, 0
       part = part |> String.split("=") |> List.to_tuple
-      parse_magnet_parts(parts, list ++ [part])
+      parse_magnet_parts parts, list ++ [part]
     end
   end
 
@@ -83,7 +83,7 @@ defmodule Torrent.Parser do
 
   def peer_extensions(options) do
     use Bitwise
-    options_dec = :binary.decode_unsigned(options)
+    options_dec = :binary.decode_unsigned options
     extensions = :math.pow(2, 20) |> trunc
     %{
       extensions: (options_dec &&& extensions) != 0
@@ -127,12 +127,12 @@ defmodule Torrent.Parser do
     if binary_str |> String.length == 8 do
       binary_str
     else
-      make_len_8("0" <> binary_str)
+      make_len_8 "0" <> binary_str
     end
   end
 
   def sha_sum(binary) do
-    :crypto.hash(:sha, binary)
+    :crypto.hash :sha, binary
   end
 
 end

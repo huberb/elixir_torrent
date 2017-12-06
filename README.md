@@ -2,13 +2,13 @@ Elixir Bittorrent Client
 Work in Progress
 
 Working:
- - parse torrentfile with Bencode
- - connect to tracker
- - parse peer information and generate handshake
+ - parse torrentfile with Bento
+ - connect to tracker per tcp or udp
  - receive file from peers
+ - ut metadata extension
  - write file to disk
 
 TODO:
  - multi file torrents
- - magnet links
+ - ut pex extension
  - seed

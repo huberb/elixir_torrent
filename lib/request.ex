@@ -70,6 +70,7 @@ defmodule Torrent.Request do
     unless any_pending?(piece_struct) do
       piece_struct 
       |> Enum.filter(fn({_, info}) -> info[:state] == :requested end)
+      |> Enum.shuffle
       |> Enum.take(@max_piece_req)
       |> Enum.map(fn({index, _}) -> index end)
     else
