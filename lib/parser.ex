@@ -15,16 +15,21 @@ defmodule Torrent.Parser do
   end
 
   def keys_to_atom(map) do
-    if is_list(map) do
-      map
-    else
+    if is_map(map) do
       map |> Enum.reduce(%{}, fn({key, val}, acc) -> 
-        if is_binary(val) || is_integer(val) do
-          put_in(acc, [String.to_atom(key)], val)
-        else
-          put_in(acc, [String.to_atom(key)], keys_to_atom(val))
+        key = String.replace(key, " ", "_")
+        cond do 
+          is_binary(val) || is_integer(val) ->
+            put_in(acc, [String.to_atom(key)], val)
+          is_map(val) ->
+            put_in(acc, [String.to_atom(key)], keys_to_atom(val))
+          is_list(val) ->
+            new_list = Enum.map(val, &(keys_to_atom(&1)))
+            put_in(acc, [String.to_atom(key)], new_list)
         end
       end)
+    else
+      map
     end
   end
 

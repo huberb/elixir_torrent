@@ -226,7 +226,7 @@ defmodule Torrent.Request do
     info_hash = meta_info[:info]
     num_pieces = meta_info[:num_pieces]
     if index != num_pieces do
-      info_hash[:"piece length"]
+      info_hash[:piece_length]
     else
       meta_info[:last_piece_size]
     end

@@ -20,7 +20,7 @@ defmodule Torrent.Filehandler do
         parent_pid: parent,
         output_path: output_path,
         file: file,
-        piece_length: info[:"piece length"],
+        piece_length: info[:piece_length],
         recv_pieces: []
       }
 
@@ -141,17 +141,17 @@ defmodule Torrent.Filehandler do
   end
 
   def num_blocks_in_piece(meta_info) do
-    meta_info[:"piece length"] / Torrent.Request.data_request_len
+    meta_info[:piece_length] / Torrent.Request.data_request_len
   end
 
   def num_pieces(meta_info) do
-    num = file_length(meta_info) / meta_info[:"piece length"]
+    num = file_length(meta_info) / meta_info[:piece_length]
     if trunc(num) == num, do: round(num), else: round(num) + 1
   end
 
   def file_length(meta_info) do
     if multi_file?(meta_info) do
-      len = Enum.map(meta_info[:files], fn(file) -> file["length"] end)
+      len = Enum.map(meta_info[:files], fn(file) -> file[:length] end)
             |> Enum.reduce(0, fn(len, acc) -> acc + len end)
     else
       meta_info[:length]
@@ -163,7 +163,7 @@ defmodule Torrent.Filehandler do
   end
 
   def last_piece_size(meta_info) do
-    piece_len = meta_info[:"piece length"] 
+    piece_len = meta_info[:piece_length] 
     num_pieces = num_pieces(meta_info) - 1
     file_length(meta_info) - piece_len * num_pieces
   end
