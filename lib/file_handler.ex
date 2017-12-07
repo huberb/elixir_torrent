@@ -3,6 +3,7 @@ defmodule Torrent.Filehandler do
   def start_link(output_path) do
 
     { _, pid } = Task.start_link(fn -> 
+      Process.flag(:priority, :high)
 
       %{ info: info } = Torrent.Metadata.wait_for_metadata()
 
@@ -112,6 +113,7 @@ defmodule Torrent.Filehandler do
     :file.position(file_info[:file], offset)
     :file.write(file_info[:file], file_data[index][:data])
     # remove data from struct to save memory
+    IO.puts "free up space.."
     pop_in(file_data, [index]) |> elem(1)
   end
 

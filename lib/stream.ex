@@ -109,7 +109,7 @@ defmodule Torrent.Stream do
     pipe_message(socket, info_structs)
   end
 
-  def process_messages(socket, info_structs) do
+  def process_communication(socket, info_structs) do
     cond do
       length(Process.info(self)[:messages]) > 0 ->
         receive do
@@ -126,8 +126,18 @@ defmodule Torrent.Stream do
     end
   end
 
+  def wait_for_memory do
+    used_space = :erlang.memory(:total) / 1024 / 1024
+    if used_space > 100 do
+      IO.puts "waiting for memory.."
+      :timer.sleep 1000
+      wait_for_memory()
+    end
+  end
+
   def pipe_message(socket, info_structs) do
-    info_structs = process_messages(socket, info_structs)
+    wait_for_memory
+    info_structs = process_communication(socket, info_structs)
     len = socket |> recv_32_bit_int
 
     if len == 0 do # keep alive

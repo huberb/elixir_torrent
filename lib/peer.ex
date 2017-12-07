@@ -1,6 +1,7 @@
 defmodule Torrent.Peer do
 
   def connect(info_structs) do 
+    Process.flag(:priority, :low)
     { ip, port } = info_structs[:peer]
 
     { :ok, pid } = Task.start_link fn -> 
