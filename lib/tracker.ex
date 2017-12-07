@@ -12,28 +12,39 @@ defmodule Torrent.Tracker do
   end
 
   def start_link(torrent) do
-    peers =
-      cond do 
-        String.starts_with?(torrent[:announce], "http") ->
-          HTTPoison.start
-          tcp_request(torrent)
-        String.starts_with?(torrent[:announce], "udp") ->
-          udp_request(torrent)
-        true ->
-          raise "this is no announce url"
-      end
+    peers = ask_for_peers(torrent, 0)
     { _, pid } = Task.start_link(fn ->
-      serve_peers(peers)
+      serve_peers(torrent)
     end)
     { pid, peers }
   end
 
-  def serve_peers(peers) do
-    receive do
-      { :get, from } ->
-        send from, peers
+  def ask_for_peers(torrent, received) do
+    IO.puts "tracker query"
+    cond do 
+      String.starts_with?(torrent[:announce], "http") ->
+        HTTPoison.start
+        tcp_request(torrent, received)
+      String.starts_with?(torrent[:announce], "udp") ->
+        udp_request(torrent)
+      true ->
+        raise "this is no announce url"
     end
-    serve_peers(peers)
+  end
+
+  def serve_peers(torrent) do
+    # wait for request cycle
+    :timer.sleep 30000
+    # tell writer we need info
+    send :writer, { :tracker }
+    # receive info
+    response = 
+      receive do
+        { :received, num } ->
+          ask_for_peers(torrent, num)
+      end
+    send :client, { :tracker, response }
+    serve_peers(torrent)
   end
 
   def udp_request(torrent) do
@@ -49,8 +60,8 @@ defmodule Torrent.Tracker do
     udp_announce(udp_socket, conn_id, tracker, torrent[:hash])
   end
 
-  def tcp_request(torrent) do
-    query = tcp_query torrent
+  def tcp_request(torrent, received) do
+    query = tcp_query torrent, received
     case HTTPoison.get(query, [], [follow_redirect: true]) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         Bento.decode!(body) |> Torrent.Parser.keys_to_atom
@@ -99,7 +110,7 @@ defmodule Torrent.Tracker do
     <> << 0 :: 32 >> # ip
     <> << 0 :: 32 >> # key
     <> << -1 :: 32 >> # num_want
-    <> << 7213 :: 16 >> # port
+    <> << 6881 :: 16 >> # port
   end
 
   def transaction_id do
@@ -125,7 +136,7 @@ defmodule Torrent.Tracker do
     <> << transaction_id :: 32 >>
   end
 
-  defp tcp_query(torrent_info) do
+  defp tcp_query(torrent_info, received) do
     info_hash = torrent_info[:hash]
 
     # TODO: less hardcode
@@ -134,7 +145,7 @@ defmodule Torrent.Tracker do
       "port"       => 6881,
       "peer_id"    => 78742315344684734465,
       "uploaded"   => 0,
-      "downloaded" => 0,
+      "downloaded" => received,
       "event"      => "started",
       "left"       => 10000,
       "compact"    => 1,

@@ -10,17 +10,18 @@ defmodule Torrent.Request do
 
   def start_link() do
     { _, pid } = Task.start_link(fn ->
+      Process.flag(:priority, :high)
       meta_info = Torrent.Metadata.wait_for_metadata() |> received_meta_info
-      piece_struct = create_piece_struct(meta_info)
-      manage_requests(piece_struct, %{}, meta_info)
+      piece_struct = create_piece_struct meta_info
+      manage_requests piece_struct, %{}, meta_info
     end)
     pid
   end
 
   def received_meta_info(meta_info) do
-    num_pieces = Torrent.Filehandler.num_pieces(meta_info[:info])
-    num_blocks = Torrent.Filehandler.num_blocks(meta_info[:info])
-    last_block_size = Torrent.Filehandler.last_block_size(meta_info[:info])
+    num_pieces = Torrent.Filehandler.num_pieces meta_info[:info] 
+    num_blocks = Torrent.Filehandler.num_blocks meta_info[:info] 
+    last_block_size = Torrent.Filehandler.last_block_size meta_info[:info]
 
     meta_info 
     |> put_in([:num_pieces], num_pieces)
@@ -31,39 +32,39 @@ defmodule Torrent.Request do
   def manage_requests(piece_struct, peer_struct, meta_info) do
     receive do
       { :bitfield, peer_ip, socket, bitfield } ->
-        peer_struct = add_new_peer(peer_struct, peer_ip, socket)
-        piece_struct = add_bitfield(piece_struct, peer_ip, bitfield, 0)
-        manage_requests(piece_struct, peer_struct, meta_info)
+        peer_struct = add_new_peer peer_struct, peer_ip, socket
+        piece_struct = add_bitfield piece_struct, peer_ip, bitfield, 0
+        manage_requests piece_struct, peer_struct, meta_info 
 
       { :piece, peer_ip, index } ->
-        piece_struct = add_new_peer_ip(piece_struct, peer_ip, index)
+        piece_struct = add_new_peer_ip piece_struct, peer_ip, index 
         manage_requests(piece_struct, peer_struct, meta_info)
 
       { :state, peer_ip, state } ->
-        peer_struct = add_state_to_peer(peer_struct, peer_ip, state)
-        request(piece_struct, peer_struct, meta_info)
+        peer_struct = add_state_to_peer peer_struct, peer_ip, state 
+        request piece_struct, peer_struct, meta_info 
 
       { :received, index, from } ->
-        { ip, _ } = from
+        # { ip, _ } = from
         # IO.puts "received #{index}, from #{ip}"
-        piece_struct = put_in(piece_struct, [index, :state], :received)
-        peer_struct = update_in(peer_struct, [from, :load], &(&1 - 1))
+        piece_struct = put_in piece_struct, [index, :state], :received 
+        peer_struct = update_in peer_struct, [from, :load], &(&1 - 1) 
         unless any_pending?(piece_struct) do
           IO.puts "canceled #{index}"
-          cancel(peer_struct, meta_info, index)
+          cancel peer_struct, meta_info, index 
         end
-        request(piece_struct, peer_struct, meta_info)
+        request piece_struct, peer_struct, meta_info 
 
       after 3_000 ->
-        request(piece_struct, peer_struct, meta_info)
+        request piece_struct, peer_struct, meta_info 
     end
   end
 
   def cancel(peer_struct, meta_info, index) do
-    Enum.each(peer_struct, fn({_, info}) ->
+    Enum.each peer_struct, fn({_, info}) ->
       socket = info[:socket]
       send_piece_request(socket, index, 0, meta_info, :cancel)
-    end)
+    end 
   end
 
   def pieces_to_request(piece_struct, meta_info) do
@@ -83,12 +84,12 @@ defmodule Torrent.Request do
   end
 
   def any_pending?(piece_struct) do
-    Enum.any?(piece_struct, fn({_, info}) -> info[:state] == :pending end)
+    Enum.any? piece_struct, fn({_, info}) -> info[:state] == :pending end 
   end
 
   def request(piece_struct, peer_struct, meta_info) do
-    pieces = pieces_to_request(piece_struct, meta_info)
-    request(piece_struct, peer_struct, meta_info, pieces)
+    pieces = pieces_to_request piece_struct, meta_info 
+    request piece_struct, peer_struct, meta_info, pieces 
   end
 
   def create_piece_struct(meta_info) do
@@ -99,7 +100,7 @@ defmodule Torrent.Request do
 
   def request(piece_struct, peer_struct, meta_info, pieces) do
     if length(pieces) == 0 do
-      manage_requests(piece_struct, peer_struct, meta_info)
+      manage_requests piece_struct, peer_struct, meta_info 
     else
       index = pieces |> Enum.at(0)
       { piece_struct, peer_struct } =
@@ -109,7 +110,7 @@ defmodule Torrent.Request do
             { piece_struct, peer_struct }
 
           [ first | peers ] -> # request from a list of peers
-            request_from_all(peer_struct, index, meta_info, first, peers)
+            request_from_all peer_struct, index, meta_info, first, peers 
             { piece_struct, peer_struct }
 
           peer_ip -> # found one good peer for request
@@ -117,12 +118,12 @@ defmodule Torrent.Request do
             |> send_piece_request(index, 0, meta_info, :request)
             {
               put_in(piece_struct, [index, :state], :requested),
-              update_in(peer_struct, [peer_ip, :load], &(&1 + 1)),
+              update_in(peer_struct, [peer_ip, :load], &(&1 + 1))
             }
 
 
         end
-        request(piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0))
+        request piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0) 
     end
   end
 
@@ -134,7 +135,7 @@ defmodule Torrent.Request do
 
     if length(remaining) > 0 do
       [ next | remaining ] = remaining
-      request_from_all(peer_struct, index, meta_info, next, remaining)
+      request_from_all peer_struct, index, meta_info, next, remaining 
     end
   end
 
@@ -172,7 +173,7 @@ defmodule Torrent.Request do
   # peer switched from choke to unchoke or vv
   def add_state_to_peer(peer_struct, id, state) do
     if peer_struct[id] != nil do
-      put_in(peer_struct, [id, :state], state)
+      put_in peer_struct, [id, :state], state 
     else
       peer_struct
     end
@@ -190,7 +191,7 @@ defmodule Torrent.Request do
 
   # add peer to list of available sender for one piece
   def add_new_peer_ip(piece_struct, peer, index) do
-    update_in(piece_struct, [index, :peers], &(&1 ++ [peer]))
+    update_in piece_struct, [index, :peers], &(&1 ++ [peer]) 
   end
 
   def add_bitfield(piece_struct, peer, bitfield, bit_index) do
@@ -210,16 +211,16 @@ defmodule Torrent.Request do
   end
 
   def send_piece_request(socket, index, offset, meta_info, type) do
-    send_block_request(socket, index, offset, meta_info, type)
-    len = data_length(index, meta_info)
+    send_block_request socket, index, offset, meta_info, type 
+    len = data_length index, meta_info 
     if offset + @data_request_len < len do
       new_offset = offset + @data_request_len
-      send_piece_request(socket, index, new_offset, meta_info, type)
+      send_piece_request socket, index, new_offset, meta_info, type 
     end
   end
 
   def send_block_request(socket, index, offset, meta_info, type) do
-    req = request_query(index, offset, meta_info, type)
+    req = request_query index, offset, meta_info, type 
     socket |> Socket.Stream.send(req)
   end
 

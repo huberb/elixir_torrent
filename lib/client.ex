@@ -15,23 +15,23 @@ defmodule Torrent.Client do
     { tracker_pid, peers } = Torrent.Tracker.start_link meta_info
     Process.register tracker_pid, :tracker
 
-    connect_all_peers peers, %{ meta_info: meta_info }
+    # connect_all_peers peers, %{ meta_info: meta_info }
+    peer_pids = connect_all_peers peers, meta_info
+    manage_peers peer_pids, meta_info
   end
 
-  def connect_all_peers(tracker_resp, info_structs) do
+  def connect_all_peers(tracker_resp, meta_info) do
     peers = Torrent.Parser.parse_all_peers tracker_resp[:peers]
 
-    peer_pids = Enum.map(peers, fn(p) -> 
-                  info_structs
-                  |> Map.put(:peer, p)
-                  |> Torrent.Peer.connect
-                end)
+    Enum.map(peers, fn(peer) -> 
+      %{ meta_info: meta_info, peer: peer }
+      |> Torrent.Peer.connect
+    end)
 
-    manage_peers peer_pids, info_structs[:meta_info]
   end
 
   def manage_peers(peer_pids, meta_info) do
-    if length(peer_pids) != 0 do
+    unless Enum.empty? peer_pids do
       receive do
         { :EXIT, from, :normal } -> # peer died
           peer_pids = List.delete peer_pids, from
@@ -40,6 +40,10 @@ defmodule Torrent.Client do
         { :output } -> # output process needs info
           send :output, { :peers, peer_pids |> length }
           manage_peers peer_pids, meta_info
+
+        { :tracker, tracker_resp } -> # tracker cycle serves new peers
+          new_pids = connect_all_peers(tracker_resp, meta_info)
+          manage_peers peer_pids ++ new_pids, meta_info
 
         { :meta_info, new_meta_info } -> # peer send the metainfo
           if meta_info[:info] do

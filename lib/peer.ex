@@ -30,11 +30,12 @@ defmodule Torrent.Peer do
   end
 
   def initiate_connection(socket, info_structs) do
+    IO.puts "connecting new peer"
     { info_hash, options } = socket 
       |> say_hello(info_structs[:meta_info]) 
       |> hear_hello
 
-    verify_checksum(info_hash, info_structs[:meta_info])
+    verify_checksum info_hash, info_structs[:meta_info]
     
     socket |> Torrent.Stream.leech(info_structs, options)
   end
@@ -47,7 +48,7 @@ defmodule Torrent.Peer do
   end
 
   def say_hello(socket, meta_info) do
-    handshake = generate_handshake(meta_info[:hash])
+    handshake = generate_handshake meta_info[:hash]
     socket |> Socket.Stream.send!(handshake)
     socket
   end

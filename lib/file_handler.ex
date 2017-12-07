@@ -29,18 +29,19 @@ defmodule Torrent.Filehandler do
 
   defp manage_files(file_data, file_info, info) do
     if download_complete?(file_info) do
-      send :client, { :finished }
       verify_file_length(file_data, file_info, info)
-      # even though we are done at this point,
-      # keep the process alive and let the client kill it when ready
-      # manage_files(file_data, file_info, info)
+      send :client, { :finished }
     else
       receive do
-        {:output } ->
+        { :output } ->
           send :output, { :received, length(file_info[:recv_pieces]) }
           manage_files(file_data, file_info, info)
 
-        {:put, block, index, offset } ->
+        { :tracker } ->
+          send :tracker, { :received, length(file_info[:recv_pieces]) }
+          manage_files(file_data, file_info, info)
+
+        { :put, block, index, offset } ->
           if index in file_info[:recv_pieces] do # already have this
             manage_files(file_data, file_info, info)
           else

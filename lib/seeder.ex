@@ -24,9 +24,8 @@ defmodule Torrent.Seeder do
 
   def listen(socket) do
     client = Socket.accept!(socket)
-    require IEx
-    IEx.pry
-    Socket.Stream.recv!(client)
+    data = Socket.Stream.recv!(client)
+    IO.puts "incoming connection, haha"
   end
 
 end
