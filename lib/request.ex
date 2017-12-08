@@ -21,11 +21,13 @@ defmodule Torrent.Request do
   def received_meta_info(meta_info) do
     num_pieces = Torrent.Filehandler.num_pieces meta_info[:info] 
     num_blocks = Torrent.Filehandler.num_blocks meta_info[:info] 
+    last_piece_size = Torrent.Filehandler.last_piece_size meta_info[:info] 
     last_block_size = Torrent.Filehandler.last_block_size meta_info[:info]
 
     meta_info 
     |> put_in([:num_pieces], num_pieces)
     |> put_in([:num_blocks], num_blocks)
+    |> put_in([:last_piece_size], last_piece_size)
     |> put_in([:last_block_size], last_block_size)
   end
 
@@ -245,8 +247,11 @@ defmodule Torrent.Request do
         8
     end
 
+    last_piece? = num_pieces - 1 == index
+    last_block? = offset + @data_request_len > meta_info[:last_piece_size]
+
     block_size = cond do
-      num_pieces - 1 == index -> 
+      last_piece? && last_block? ->
         meta_info[:last_block_size]
       true -> 
         @data_request_len

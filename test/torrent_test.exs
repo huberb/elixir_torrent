@@ -4,6 +4,7 @@ defmodule TorrentTest do
 
   test "file size" do
     info = %{ length: 1277987, piece_length: 16384 }
+    assert Torrent.Filehandler.last_block_size(info) == 35
     assert Torrent.Filehandler.num_pieces(info) == 79
     # assert Torrent.hello() == :world
 
