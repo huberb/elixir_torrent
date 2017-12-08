@@ -8,16 +8,14 @@ defmodule Torrent.Client do
     Torrent.Filehandler.start_link(output_path) |> Process.register(:writer)
     Torrent.Output.start_link()                 |> Process.register(:output)
     Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
+    Torrent.Tracker.start_link(meta_info)       |> Process.register(:tracker)
 
     { seeder_pid, port } = Torrent.Seeder.start_link()
     Process.register seeder_pid, :seeder
     
-    { tracker_pid, peers } = Torrent.Tracker.start_link meta_info
-    Process.register tracker_pid, :tracker
 
-    # connect_all_peers peers, %{ meta_info: meta_info }
-    peer_pids = connect_all_peers peers, meta_info
-    manage_peers peer_pids, meta_info
+    # peer_pids = connect_all_peers peers, meta_info
+    manage_peers [], meta_info
   end
 
   def connect_all_peers(tracker_resp, meta_info) do
@@ -63,6 +61,12 @@ defmodule Torrent.Client do
           Enum.each peer_pids, &(Process.exit(&1, :kill))
           shutdown()
           IO.puts "shutting down!"
+      end
+    else # if we dont have peers we can only wait for the tracker to send more
+      receive do
+        { :tracker, tracker_resp } -> # tracker cycle serves new peers
+          new_pids = connect_all_peers(tracker_resp, meta_info)
+          manage_peers peer_pids ++ new_pids, meta_info
       end
     end
   end
