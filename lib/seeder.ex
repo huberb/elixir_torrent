@@ -6,7 +6,8 @@ defmodule Torrent.Seeder do
     { socket, port } = open_port(@standart_port)
 
     { _, pid } = Task.start_link(fn ->
-      listen(socket)
+      client = Socket.accept!(socket)
+      listen(client)
     end)
 
     { pid, port }
@@ -22,10 +23,10 @@ defmodule Torrent.Seeder do
     end
   end
 
-  def listen(socket) do
-    client = Socket.accept!(socket)
-    data = Socket.Stream.recv!(client)
+  def listen(client) do
+    _ = Socket.Stream.recv!(client)
     IO.puts "incoming connection, haha"
+    listen(client)
   end
 
 end

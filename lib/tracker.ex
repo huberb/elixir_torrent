@@ -1,6 +1,6 @@
 defmodule Torrent.Tracker do
 
-  @wait_time_between_request 3000
+  @wait_time_between_request 30000
 
   def wait_time do
     @wait_time_between_request
@@ -11,6 +11,9 @@ defmodule Torrent.Tracker do
 
   def start_link(torrent) do
     { _, pid } = Task.start_link(fn ->
+      # wait for other processes to go up
+      :timer.sleep 1000
+      # decide tracker protocol
       cond do
         String.starts_with?(torrent[:announce], "http") ->
           HTTPoison.start
@@ -34,7 +37,7 @@ defmodule Torrent.Tracker do
       response = 
         receive do
           { :received, num } ->
-            ask_for_peers(torrent, num)
+            request(torrent, num)
         end
         # tell client about new peers
       send :client, { :tracker, response }
@@ -44,12 +47,8 @@ defmodule Torrent.Tracker do
       serve_peers(torrent)
     end
 
-    def ask_for_peers(torrent, received) do
-      IO.puts "tracker query"
-      cond do 
-        String.starts_with?(torrent[:announce], "http") ->
-          Torrent.Tracker.TCP.request(torrent, received)
-      end
+    def random_peer_ip do
+      0..19 |> Enum.map(fn(_) -> :random.uniform(9) end) |> Enum.join |> String.to_integer
     end
 
     def tcp_query(torrent_info, received) do
@@ -59,7 +58,7 @@ defmodule Torrent.Tracker do
       query = %{
         "info_hash"  => info_hash,
         "port"       => 6881,
-        "peer_id"    => 78742315344684734465,
+        "peer_id"    => random_peer_ip(),
         "uploaded"   => 0,
         "downloaded" => received,
         "event"      => "started",
@@ -103,18 +102,44 @@ defmodule Torrent.Tracker do
       Enum.find_index(list, &(&1 == value))
     end
 
+    def serve_peers(torrent, socket \\ nil) do
+      # wait for request cycle
+      # tell writer we need info
+      send :writer, { :tracker }
+      # receive info and connect to tracker
+      { response, socket } = 
+        receive do
+          { :received, num } ->
+            request(torrent, socket)
+        end
+        # tell client about new peers
+      send :client, { :tracker, response }
 
-    def udp_request(torrent) do
+      Torrent.Tracker.wait_time
+      |> :timer.sleep
+      # loop
+      serve_peers(torrent, socket)
+    end
+
+    def request(torrent, socket \\ nil ) do
       [ query, port ] = String.replace_prefix(torrent[:announce], "udp://", "")
                         |> String.split(":")
 
       port = String.to_integer(port)
+      socket = 
+        case Socket.UDP.open(port) do
+          { :ok, new_socket } -> new_socket
+          { :error, :eaddrinuse } -> socket
+          { :error, _ } -> raise "tracker killed us"
+        end
+
       req = udp_query_for_connection_ip()
-      udp_socket = Socket.UDP.open!(port)
       tracker = { query, port }
-      Socket.Datagram.send(udp_socket, req, tracker)
-      conn_id = recv_connection_id(udp_socket)
-      udp_announce(udp_socket, conn_id, tracker, torrent[:hash])
+
+      Socket.Datagram.send(socket, req, tracker)
+      conn_id = recv_connection_id(socket)
+      response = udp_announce(socket, conn_id, tracker, torrent[:hash])
+      { response, socket }
     end
 
     def udp_announce(udp_socket, conn_id, tracker, hash) do

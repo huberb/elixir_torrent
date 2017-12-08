@@ -5,10 +5,10 @@ defmodule Torrent.Client do
 
     self()                                      |> Process.register(:client)
     Torrent.Request.start_link()                |> Process.register(:request)
-    Torrent.Filehandler.start_link(output_path) |> Process.register(:writer)
     Torrent.Output.start_link()                 |> Process.register(:output)
-    Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
     Torrent.Tracker.start_link(meta_info)       |> Process.register(:tracker)
+    Torrent.Filehandler.start_link(output_path) |> Process.register(:writer)
+    Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
 
     { seeder_pid, port } = Torrent.Seeder.start_link()
     Process.register seeder_pid, :seeder

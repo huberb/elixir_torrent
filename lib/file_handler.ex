@@ -5,6 +5,7 @@ defmodule Torrent.Filehandler do
     { _, pid } = Task.start_link(fn -> 
       Process.flag(:priority, :high)
 
+      send :tracker, { :received, 0 }
       %{ info: info } = Torrent.Metadata.wait_for_metadata()
 
       mkdir_tmp()
