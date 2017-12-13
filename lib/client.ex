@@ -25,7 +25,6 @@ defmodule Torrent.Client do
       %{ meta_info: meta_info, peer: peer }
       |> Torrent.Peer.connect
     end)
-
   end
 
   def manage_peers(peer_pids, meta_info) do
@@ -38,10 +37,6 @@ defmodule Torrent.Client do
         { :output } -> # output process needs info
           send :output, { :peers, peer_pids |> length }
           manage_peers peer_pids, meta_info
-
-        { :tracker, tracker_resp } -> # tracker cycle serves new peers
-          new_pids = connect_all_peers(tracker_resp, meta_info)
-          manage_peers peer_pids ++ new_pids, meta_info
 
         { :meta_info, new_meta_info } -> # peer send the metainfo
           if meta_info[:info] do
@@ -57,17 +52,27 @@ defmodule Torrent.Client do
           |> Enum.each(&(send(&1, { :received, index })))
           manage_peers peer_pids, meta_info
 
+        { :tracker, tracker_resp } -> # tracker cycle serves new peers
+          new_pids = connect_all_peers(tracker_resp, meta_info)
+          manage_peers peer_pids ++ new_pids, meta_info
+
         { :finished } -> # download is finished
           Enum.each peer_pids, &(Process.exit(&1, :kill))
           shutdown()
           IO.puts "shutting down!"
       end
-    else # if we dont have peers we can only wait for the tracker to send more
-      receive do
-        { :tracker, tracker_resp } -> # tracker cycle serves new peers
-          new_pids = connect_all_peers(tracker_resp, meta_info)
-          manage_peers peer_pids ++ new_pids, meta_info
-      end
+      else # if we dont have peers we can only wait for the tracker to send more
+      update_peers peer_pids, meta_info
+    end
+  end
+
+  def update_peers(peer_pids, meta_info) do
+    # tell tracker to request new peers
+    send :tracker, { :received, 0 }
+    receive do
+      { :tracker, tracker_resp } -> # tracker cycle serves new peers
+        new_pids = connect_all_peers(tracker_resp, meta_info)
+        manage_peers peer_pids ++ new_pids, meta_info
     end
   end
 

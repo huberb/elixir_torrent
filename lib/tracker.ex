@@ -7,7 +7,7 @@ defmodule Torrent.Tracker do
   end
 
   alias Torrent.Tracker.UDP
-  alias Torrent.Tracker.TCP
+  alias Torrent.Tracker.TCP, as: TCP
 
   def start_link(torrent) do
     { _, pid } = Task.start_link(fn ->
@@ -31,18 +31,15 @@ defmodule Torrent.Tracker do
 
     def serve_peers(torrent) do
       # wait for request cycle
-      # tell writer we need info
-      send :writer, { :tracker }
-      # receive info and connect to tracker
       response = 
         receive do
           { :received, num } ->
             request(torrent, num)
+          after 30_000 ->
+            request(torrent, 0)
         end
-        # tell client about new peers
+      # tell client about new peers
       send :client, { :tracker, response }
-      Torrent.Tracker.wait_time
-      |> :timer.sleep
       # loop
       serve_peers(torrent)
     end
@@ -103,21 +100,14 @@ defmodule Torrent.Tracker do
     end
 
     def serve_peers(torrent, socket \\ nil) do
-      # wait for request cycle
-      # tell writer we need info
-      send :writer, { :tracker }
-      # receive info and connect to tracker
       { response, socket } = 
         receive do
           { :received, num } ->
             request(torrent, socket)
+          after 30_000 ->
+            request(torrent, socket)
         end
-        # tell client about new peers
       send :client, { :tracker, response }
-
-      Torrent.Tracker.wait_time
-      |> :timer.sleep
-      # loop
       serve_peers(torrent, socket)
     end
 

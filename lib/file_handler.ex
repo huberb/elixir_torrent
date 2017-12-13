@@ -5,7 +5,6 @@ defmodule Torrent.Filehandler do
     { _, pid } = Task.start_link(fn -> 
       Process.flag(:priority, :high)
 
-      send :tracker, { :received, 0 }
       %{ info: info } = Torrent.Metadata.wait_for_metadata()
 
       mkdir_tmp()
@@ -79,6 +78,7 @@ defmodule Torrent.Filehandler do
   def verify_piece(file_data, file_info, index, from) do
     recv_block_len = file_data[index] |> Map.keys |> length
 
+    # TODO: check this
     if recv_block_len == file_info[:blocks_in_piece] do
       send :request, { :received, index, from }
       send :client, { :received, index }
@@ -93,13 +93,6 @@ defmodule Torrent.Filehandler do
     else
       { file_data, file_info }
     end
-  end
-
-  def concat_data(file_data) do
-    file_data
-    |> Enum.sort_by(fn({index, _}) -> index end)
-    |> Enum.map(fn({_, block}) -> block[:data] end)
-    |> Enum.reduce("", fn(data, acc) -> acc <> data end)
   end
 
   def concat_block(block) do
@@ -147,6 +140,7 @@ defmodule Torrent.Filehandler do
 
   def num_blocks_in_piece(meta_info) do
     meta_info[:piece_length] / Torrent.Request.data_request_len
+    |> round
   end
 
   def num_pieces(meta_info) do
@@ -180,7 +174,6 @@ defmodule Torrent.Filehandler do
 
   def last_block_size(meta_info) do 
     data_request_len = Torrent.Request.data_request_len
-    #last_piece_size(meta_info) - (num_blocks_in_piece(meta_info) - 1) * data_request_len
     last_piece_size(meta_info) - blocks_in_last_piece(meta_info) * data_request_len
     |> round
   end
