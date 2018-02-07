@@ -113,7 +113,7 @@ defmodule Torrent.Filehandler do
     pop_in(file_data, [index]) |> elem(1)
   end
 
-  def verify_file_length(file_data, file_info, meta_info) do
+  defp verify_file_length(file_data, file_info, meta_info) do
     path = "#{file_info[:output_path]}/#{meta_info[:name]}"
     %{ size: size } = File.stat! path
     if size != file_length(meta_info) do
@@ -128,14 +128,14 @@ defmodule Torrent.Filehandler do
   end
 
   # TODO: not good enough
-  def split_into_files(source_file_path, meta_info) do
+  defp split_into_files(source_file_path, meta_info) do
     tmp_source_file_name = source_file_path <> "tmp"
     File.rename(source_file_path, tmp_source_file_name)
     File.mkdir(source_file_path)
     split_into_files(source_file_path, tmp_source_file_name, meta_info, 0)
   end
 
-  def split_into_files(dest_folder, source_file, meta_info, written_bytes) do
+  defp split_into_files(dest_folder, source_file, meta_info, written_bytes) do
     if length(meta_info[:files]) != 0 do
       file = List.first(meta_info[:files])
       path = escape_filename(dest_folder <> "/" <> Enum.join(file[:path], "/"))
@@ -156,19 +156,23 @@ defmodule Torrent.Filehandler do
     end
   end
 
-  def mkdir_tmp do
+  defp mkdir_tmp do
     unless File.exists?("tmp") do
       # IO.puts "creating tmp file"
       File.mkdir("tmp")
     end
   end
 
-  def escape_filename(name) do
+  defp escape_filename(name) do
     name 
     |> String.downcase 
     |> String.replace(" ", "_")
     |> String.replace("[", "_")
     |> String.replace("]", "_")
+    |> String.replace(".", "_")
+    |> String.replace(",", "_")
+    |> String.replace(":", "_")
+    |> String.replace(";", "_")
   end
 
   defp download_complete?(file_info) do
