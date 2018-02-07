@@ -115,6 +115,7 @@ defmodule Torrent.Tracker do
       [ query, port ] = String.replace_prefix(torrent[:announce], "udp://", "")
                         |> String.split(":")
 
+      port = String.replace_suffix(port, "/announce", "")
       port = String.to_integer(port)
       socket = 
         case Socket.UDP.open(port) do

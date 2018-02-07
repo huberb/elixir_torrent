@@ -167,12 +167,16 @@ defmodule Torrent.Filehandler do
     name 
     |> String.downcase 
     |> String.replace(" ", "_")
-    |> String.replace("[", "_")
-    |> String.replace("]", "_")
     |> String.replace(".", "_")
     |> String.replace(",", "_")
     |> String.replace(":", "_")
     |> String.replace(";", "_")
+    |> String.replace("(", "_")
+    |> String.replace(")", "_")
+    |> String.replace("[", "_")
+    |> String.replace("]", "_")
+    |> String.replace("}", "_")
+    |> String.replace("{", "_")
   end
 
   defp download_complete?(file_info) do
