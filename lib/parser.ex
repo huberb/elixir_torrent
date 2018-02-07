@@ -2,9 +2,7 @@ defmodule Torrent.Parser do
 
   def parse_file(torrent_path) do
 
-    # TODO: File Error
     { ok, content } = File.read(torrent_path)
-
     unless ok == :ok do
       raise "No Torrent File"
     end

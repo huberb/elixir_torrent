@@ -30,8 +30,8 @@ defmodule Torrent.Filehandler do
 
   defp manage_files(file_data, file_info, info) do
     if download_complete?(file_info) do
-      verify_file_length(file_data, file_info, info)
       send :client, { :finished }
+      verify_file_length(file_data, file_info, info)
     else
       receive do
         { :output } ->
@@ -115,16 +115,48 @@ defmodule Torrent.Filehandler do
   def verify_file_length(file_data, file_info, meta_info) do
     path = "#{file_info[:output_path]}/#{meta_info[:name]}"
     %{ size: size } = File.stat! path
-    if size != meta_info[:length] do
+    if size != file_length(meta_info) do
       require IEx
       IEx.pry
       raise "Wrong Filesize!"
     end
-    IO.puts "Filesize correct: #{meta_info[:length]} bytes"
+    if multi_file?(meta_info) do
+      split_into_files(path, meta_info)
+    end
+    IO.puts "Filesize correct: #{file_length(meta_info)} bytes"
+  end
+
+  # TODO: not good enough
+  def split_into_files(source_file_path, meta_info) do
+    tmp_source_file_name = source_file_path <> "tmp"
+    File.rename(source_file_path, tmp_source_file_name)
+    File.mkdir(source_file_path)
+    split_into_files(source_file_path, tmp_source_file_name, meta_info, 0)
+  end
+
+  def split_into_files(dest_folder, source_file, meta_info, written_bytes) do
+    if length(meta_info[:files]) != 0 do
+      file = List.first(meta_info[:files])
+      path = dest_folder <> "/" <> Enum.join(file[:path], "/")
+      File.mkdir_p(Path.dirname(path))
+      File.touch(path)
+
+      { _, src_fileIO } = :file.open(source_file, [:read, :write, :binary])
+      { _, dst_fileIO } = :file.open(path, [:read, :write, :binary])
+
+      :file.position(src_fileIO, written_bytes)
+      { _, data } = :file.read(src_fileIO, file[:length])
+      :file.write(dst_fileIO, data)
+
+      meta_info = update_in(meta_info, [:files], &(List.delete_at(&1, 0)))
+      split_into_files(dest_folder, source_file, meta_info, written_bytes + file[:length])
+    else
+      File.rm_rf(source_file)
+    end
   end
 
   def mkdir_tmp do
-    if !File.exists?("tmp") do
+    unless File.exists?("tmp") do
       # IO.puts "creating tmp file"
       File.mkdir("tmp")
     end

@@ -7,8 +7,8 @@ Working:
  - receive file from peers
  - ut metadata extension
  - write file to disk
+ - multi file torrents
 
 TODO:
- - multi file torrents
- - ut pex extension
  - seed
+ - memory optimization
