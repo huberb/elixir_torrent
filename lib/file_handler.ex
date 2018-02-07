@@ -6,6 +6,7 @@ defmodule Torrent.Filehandler do
       Process.flag(:priority, :high)
 
       %{ info: info } = Torrent.Metadata.wait_for_metadata()
+      info = update_in(info, [:name], &(escape_filename(&1)))
 
       mkdir_tmp()
       path = "#{output_path}/#{info[:name]}"
@@ -137,7 +138,7 @@ defmodule Torrent.Filehandler do
   def split_into_files(dest_folder, source_file, meta_info, written_bytes) do
     if length(meta_info[:files]) != 0 do
       file = List.first(meta_info[:files])
-      path = dest_folder <> "/" <> Enum.join(file[:path], "/")
+      path = escape_filename(dest_folder <> "/" <> Enum.join(file[:path], "/"))
       File.mkdir_p(Path.dirname(path))
       File.touch(path)
 
@@ -160,6 +161,14 @@ defmodule Torrent.Filehandler do
       # IO.puts "creating tmp file"
       File.mkdir("tmp")
     end
+  end
+
+  def escape_filename(name) do
+    name 
+    |> String.downcase 
+    |> String.replace(" ", "_")
+    |> String.replace("[", "_")
+    |> String.replace("]", "_")
   end
 
   defp download_complete?(file_info) do
