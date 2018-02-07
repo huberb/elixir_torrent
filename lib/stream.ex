@@ -145,6 +145,7 @@ defmodule Torrent.Stream do
     else
       id = socket |> recv_8_bit_int
       { _, flag } = List.keyfind(@message_flags, id, 0)
+      # IO.puts "got a #{flag} message"
       case flag do
         :choke ->
           pipe_message(socket, info_structs)

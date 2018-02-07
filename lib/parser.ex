@@ -113,7 +113,7 @@ defmodule Torrent.Parser do
     |> String.graphemes
   end
 
-  def validate_block(pieces, index, data) do
+  def verify_piece(pieces, index, data) do
     foreign_hash = data |> sha_sum
     real_hash = pieces |> binary_part(index * 20, 20)
     if foreign_hash != real_hash do

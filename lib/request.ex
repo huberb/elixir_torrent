@@ -20,15 +20,11 @@ defmodule Torrent.Request do
 
   def received_meta_info(meta_info) do
     num_pieces = Torrent.Filehandler.num_pieces meta_info[:info] 
-    num_blocks = Torrent.Filehandler.num_blocks meta_info[:info] 
     last_piece_size = Torrent.Filehandler.last_piece_size meta_info[:info] 
-    last_block_size = Torrent.Filehandler.last_block_size meta_info[:info]
 
     meta_info 
     |> put_in([:num_pieces], num_pieces)
-    |> put_in([:num_blocks], num_blocks)
     |> put_in([:last_piece_size], last_piece_size)
-    |> put_in([:last_block_size], last_block_size)
   end
 
   def manage_requests(piece_struct, peer_struct, meta_info) do
@@ -79,7 +75,7 @@ defmodule Torrent.Request do
     else
       piece_struct 
       |> Enum.filter(fn({_, info}) -> info[:state] == :pending end)
-      |> Enum.sort_by(fn({index, _}) -> index end)
+      |> Enum.sort_by(fn({index, _}) -> -index end) # start with highest index
       |> Enum.take(@max_piece_req)
       |> Enum.map(fn({index, _}) -> index end)
     end
@@ -214,7 +210,7 @@ defmodule Torrent.Request do
 
   def send_piece_request(socket, index, offset, meta_info, type) do
     send_block_request socket, index, offset, meta_info, type 
-    len = data_length index, meta_info 
+    len = piece_length index, meta_info 
     if offset + @data_request_len < len do
       new_offset = offset + @data_request_len
       send_piece_request socket, index, new_offset, meta_info, type 
@@ -226,11 +222,11 @@ defmodule Torrent.Request do
     socket |> Socket.Stream.send(req)
   end
 
-  def data_length(index, meta_info) do
+  def piece_length(index, meta_info) do
     info_hash = meta_info[:info]
     num_pieces = meta_info[:num_pieces]
-    if index != num_pieces do
-      info_hash[:piece_length]
+    if index != num_pieces - 1 do
+      meta_info[:info][:piece_length]
     else
       meta_info[:last_piece_size]
     end
@@ -239,24 +235,19 @@ defmodule Torrent.Request do
   def request_query(index, offset, meta_info, type) do
     num_pieces = meta_info[:num_pieces]
     request_length = 13
-
-    id = case type do
-      :request ->
-        6
-      :cancel ->
-        8
-    end
-
+    id = if type == :request, do: 6, else: 8
     last_piece? = num_pieces - 1 == index
     last_block? = offset + @data_request_len > meta_info[:last_piece_size]
 
     block_size = cond do
       last_piece? && last_block? ->
-        meta_info[:last_block_size]
+        size = meta_info[:last_piece_size] - offset
+        if size <= 0, do: @data_request_len, else: size
       true -> 
         @data_request_len
     end
 
+    # IO.puts "index: #{index}, offset: #{offset}, block_size: #{block_size}"
     << request_length :: 32 >>
     <> << id :: 8 >>
     <> << index :: 32 >>

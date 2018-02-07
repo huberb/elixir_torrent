@@ -13,8 +13,6 @@ defmodule Torrent.Client do
     { seeder_pid, port } = Torrent.Seeder.start_link()
     Process.register seeder_pid, :seeder
     
-
-    # peer_pids = connect_all_peers peers, meta_info
     manage_peers [], meta_info
   end
 
@@ -61,7 +59,7 @@ defmodule Torrent.Client do
           shutdown()
           IO.puts "shutting down!"
       end
-      else # if we dont have peers we can only wait for the tracker to send more
+    else # if we dont have peers we can only wait for the tracker to send more
       update_peers peer_pids, meta_info
     end
   end

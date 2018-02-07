@@ -40,7 +40,7 @@ defmodule Torrent.Output do
     #   left: #{output[:max] - output[:received]}
     #   unrequested: #{output[:max] - output[:received] - output[:requests]}
     # "
-    IO.puts "peers: #{output[:num_peers]}, file: #{output[:received]} / #{output[:max]}"
+    IO.puts "peers: #{output[:num_peers]}, file: #{output[:received] / output[:max] * 100}%"
 
     pipe_output(output)
   end
