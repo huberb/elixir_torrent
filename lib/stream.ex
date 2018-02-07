@@ -128,7 +128,7 @@ defmodule Torrent.Stream do
 
   def wait_for_memory do
     used_space = :erlang.memory(:total) / 1024 / 1024
-    if used_space > 100 do
+    if used_space > 200 do
       IO.puts "waiting for memory.."
       :timer.sleep 1000
       wait_for_memory()
