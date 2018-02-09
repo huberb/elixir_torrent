@@ -60,12 +60,13 @@ defmodule Torrent.Stream do
   def piece(socket, len, info_structs) do
     index = socket |> recv_32_bit_int
     offset = socket |> recv_32_bit_int
-    # IO.puts "received #{index} with offset: #{offset}"
+
     block = %{
       peer: info_structs[:peer],
       len: len - 9,
       data: socket |> recv_byte!(len - 9)
     }
+    send :output, { :peer, "received #{index} with offset: #{offset}" }
     send :writer, { :put, block, index, offset }
     pipe_message(socket, info_structs)
   end
