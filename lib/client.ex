@@ -13,13 +13,12 @@ defmodule Torrent.Client do
     { seeder_pid, port } = Torrent.Seeder.start_link()
     Process.register seeder_pid, :seeder
     
+    meta_info = put_in(meta_info, [:peers], [])
+    send :tracker, { :received, 0 }
     manage_peers [], meta_info
   end
 
-  def connect_all_peers(tracker_resp, meta_info, count \\ 100) do
-    peers = tracker_resp[:peers] 
-            |> Torrent.Parser.parse_all_peers
-            |> Enum.take(count)
+  def connect_all_peers(peers, meta_info) do
     send :output, { :client, "connecting #{Enum.count(peers)} new peers" }
 
     Enum.map(peers, fn(peer) -> 
@@ -30,51 +29,50 @@ defmodule Torrent.Client do
 
   def manage_peers(peer_pids, meta_info) do
     send :output, { :client, "connected with #{Enum.count(peer_pids)} peers" }
-    unless Enum.empty? peer_pids do
-      receive do
-        { :EXIT, from, :normal } -> # peer died
-          peer_pids = List.delete peer_pids, from
+      { peer_pids, meta_info } = connect_some_peers(meta_info, peer_pids)
+    receive do
+      { :EXIT, from, :normal } -> # peer died
+        peer_pids = List.delete peer_pids, from
+        manage_peers peer_pids, meta_info
+
+      { :meta_info, new_meta_info } -> # peer send the metainfo
+        if meta_info[:info] do
           manage_peers peer_pids, meta_info
+        else
+          send_metadata_to_peers peer_pids, new_meta_info
+          manage_peers peer_pids, new_meta_info
+        end
 
-        { :meta_info, new_meta_info } -> # peer send the metainfo
-          if meta_info[:info] do
-            manage_peers peer_pids, meta_info
-          else
-            send_metadata_to_peers peer_pids, new_meta_info
-            manage_peers peer_pids, new_meta_info
-          end
+      { :received, index } -> # piece is finished
+        Enum.shuffle(peer_pids)
+        |> Enum.take(1) # TODO: how many?
+        |> Enum.each(&(send(&1, { :received, index })))
+        manage_peers peer_pids, meta_info
 
-        { :received, index } -> # piece is finished
-          Enum.shuffle(peer_pids)
-          |> Enum.take(1) # TODO: how many?
-          |> Enum.each(&(send(&1, { :received, index })))
-          manage_peers peer_pids, meta_info
+      { :tracker, tracker_resp } -> # tracker cycle serves new peers
+        peers = Torrent.Parser.parse_all_peers(tracker_resp[:peers])
+        peers = meta_info[:peers] ++ peers |> Enum.uniq
+        meta_info = put_in(meta_info, [:peers], peers)
+        { peer_pids, meta_info } = connect_some_peers(meta_info, peer_pids)
+        manage_peers(peer_pids, meta_info)
 
-        { :tracker, tracker_resp } -> # tracker cycle serves new peers
-          needed_peer_num = meta_info[:max_peers] - Enum.count(peer_pids)
-          if needed_peer_num > 0 do
-            new_pids = connect_all_peers(tracker_resp, meta_info, needed_peer_num)
-            manage_peers peer_pids ++ new_pids, meta_info
-          else
-            manage_peers peer_pids, meta_info
-          end
-
-        { :finished } -> # download is finished
-          Enum.each peer_pids, &(Process.exit(&1, :kill))
-          shutdown()
-      end
-    else # if we dont have peers we can only wait for the tracker to send more
-      update_peers peer_pids, meta_info
+      { :finished } -> # download is finished
+        Enum.each peer_pids, &(Process.exit(&1, :kill))
+        shutdown()
     end
   end
 
-  def update_peers(peer_pids, meta_info) do
-    # tell tracker to request new peers
-    send :tracker, { :received, 0 }
-    receive do
-      { :tracker, tracker_resp } -> # tracker cycle serves new peers
-        new_pids = connect_all_peers(tracker_resp, meta_info, meta_info[:max_peers])
-        manage_peers peer_pids ++ new_pids, meta_info
+  def connect_some_peers(meta_info, peer_pids) do
+    number_of_new_connections = meta_info[:max_peers] - Enum.count(peer_pids)
+    if number_of_new_connections > 0 && Enum.count(meta_info[:peers]) > 0 do
+      all_connections = meta_info[:peers]
+      new_connections = all_connections |> Enum.slice(0..number_of_new_connections)
+                        |> connect_all_peers(meta_info)
+      left_connections = all_connections |> Enum.slice(number_of_new_connections..-1)
+      meta_info = put_in(meta_info, [:peers], all_connections ++ left_connections |> Enum.uniq)
+      { new_connections ++ peer_pids, meta_info }
+    else
+      { peer_pids, meta_info }
     end
   end
 
