@@ -129,7 +129,7 @@ defmodule Torrent.Stream do
   def wait_for_memory do
     used_space = :erlang.memory(:total) / 1024 / 1024
     if used_space > 200 do
-      IO.puts "waiting for memory.."
+      send :output, { :peer, "waiting for memory.." }
       :timer.sleep 1000
       wait_for_memory()
     end
@@ -145,7 +145,6 @@ defmodule Torrent.Stream do
     else
       id = socket |> recv_8_bit_int
       { _, flag } = List.keyfind(@message_flags, id, 0)
-      # IO.puts "got a #{flag} message"
       case flag do
         :choke ->
           pipe_message(socket, info_structs)

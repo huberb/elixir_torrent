@@ -48,7 +48,7 @@ defmodule Torrent.Request do
         piece_struct = put_in piece_struct, [index, :state], :received 
         peer_struct = update_in peer_struct, [from, :load], &(&1 - 1) 
         unless any_pending?(piece_struct) do
-          IO.puts "canceled #{index}"
+          # IO.puts "canceled #{index}"
           cancel peer_struct, meta_info, index 
         end
         request piece_struct, peer_struct, meta_info 

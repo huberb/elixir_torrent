@@ -32,10 +32,6 @@ defmodule Torrent.Client do
           peer_pids = List.delete peer_pids, from
           manage_peers peer_pids, meta_info
 
-        { :output } -> # output process needs info
-          send :output, { :peers, peer_pids |> length }
-          manage_peers peer_pids, meta_info
-
         { :meta_info, new_meta_info } -> # peer send the metainfo
           if meta_info[:info] do
             manage_peers peer_pids, meta_info
@@ -57,7 +53,6 @@ defmodule Torrent.Client do
         { :finished } -> # download is finished
           Enum.each peer_pids, &(Process.exit(&1, :kill))
           shutdown()
-          IO.puts "shutting down!"
       end
     else # if we dont have peers we can only wait for the tracker to send more
       update_peers peer_pids, meta_info

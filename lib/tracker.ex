@@ -76,7 +76,7 @@ defmodule Torrent.Tracker do
           Bento.decode!(body) |> Torrent.Parser.keys_to_atom
 
         {:ok, %HTTPoison.Response{status_code: 404}} ->
-          IO.puts "Tracker not found :("
+          raise "TrackerError"
           raise "404"
 
         {:error, %HTTPoison.Error{reason: reason}} ->

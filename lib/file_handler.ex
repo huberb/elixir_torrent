@@ -24,6 +24,8 @@ defmodule Torrent.Filehandler do
         recv_pieces: []
       }
 
+      send :output, { :meta_info, file_info[:pieces_needed] }
+
       manage_files(%{}, file_info, info)
     end)
     pid
@@ -35,10 +37,6 @@ defmodule Torrent.Filehandler do
       verify_file_length(file_data, file_info, info)
     else
       receive do
-        { :output } ->
-          send :output, { :received, length(file_info[:recv_pieces]) }
-          manage_files(file_data, file_info, info)
-
         { :tracker } ->
           send :tracker, { :received, length(file_info[:recv_pieces]) }
           manage_files(file_data, file_info, info)
@@ -83,9 +81,11 @@ defmodule Torrent.Filehandler do
     end
     block = concat_block(file_data[index])
 
+    # piece complete?
     if piece_size == byte_size(block) do
       send :request, { :received, index, from }
       send :client, { :received, index }
+      send :output, { :writer, "piece #{index} complete" }
 
       Torrent.Parser.verify_piece(file_info[:piece_info], index, block)
       file_info = update_in(file_info, [:recv_pieces], &(&1 ++ [index]))
@@ -124,7 +124,7 @@ defmodule Torrent.Filehandler do
     if multi_file?(meta_info) do
       split_into_files(path, meta_info)
     end
-    IO.puts "Filesize correct: #{file_length(meta_info)} bytes"
+    send :output, { :finish, "Filesize correct: #{file_length(meta_info)} bytes" }
   end
 
   # TODO: not good enough

@@ -6,13 +6,11 @@ defmodule Torrent.Metadata do
   def start_link(meta_info) do
     { _, pid } = Task.start_link(fn ->
       if meta_info[:info] == nil do # we dont have the metadata
-        IO.puts "wait for metadata"
         meta_info = wait_for_metadata()
         send_metadata(meta_info)
       else # we have the metadata
-        send :request, { :meta_info, meta_info }
-        send :writer, { :meta_info, meta_info }
-        send :output, { :meta_info, meta_info }
+        send :client, { :meta_info, meta_info }
+        send_metadata(meta_info)
       end
       stay_alive()
     end)
@@ -27,9 +25,7 @@ defmodule Torrent.Metadata do
   def send_metadata(meta_info) do
     send :request, { :meta_info, meta_info }
     send :writer, { :meta_info, meta_info }
-    send :output, { :meta_info, meta_info }
-    send :client, { :meta_info, meta_info }
-    IO.puts "send all metadata"
+    send :output, { :info, "sent all metadata to peers"  }
   end
 
   def wait_for_metadata do
