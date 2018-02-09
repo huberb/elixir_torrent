@@ -26,7 +26,8 @@ defmodule Torrent.Mixfile do
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"},
       {:socket, "~> 0.3"},
       {:httpoison, "~> 0.13"},
-      {:bento, "~> 0.9"}
+      #{:bento, "~> 0.9"}
+      {:bento, git: "https://github.com/huberb/bento"}
     ]
   end
 end
