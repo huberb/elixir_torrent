@@ -16,8 +16,11 @@ defmodule Torrent.Client do
     manage_peers [], meta_info
   end
 
-  def connect_all_peers(tracker_resp, meta_info) do
-    peers = Torrent.Parser.parse_all_peers tracker_resp[:peers]
+  def connect_all_peers(tracker_resp, meta_info, count \\ 100) do
+    peers = tracker_resp[:peers] 
+            |> Torrent.Parser.parse_all_peers
+            |> Enum.take(count)
+    send :output, { :client, "connecting #{Enum.count(peers)} new peers" }
 
     Enum.map(peers, fn(peer) -> 
       %{ meta_info: meta_info, peer: peer }
@@ -26,6 +29,7 @@ defmodule Torrent.Client do
   end
 
   def manage_peers(peer_pids, meta_info) do
+    send :output, { :client, "connected with #{Enum.count(peer_pids)} peers" }
     unless Enum.empty? peer_pids do
       receive do
         { :EXIT, from, :normal } -> # peer died
@@ -47,8 +51,13 @@ defmodule Torrent.Client do
           manage_peers peer_pids, meta_info
 
         { :tracker, tracker_resp } -> # tracker cycle serves new peers
-          new_pids = connect_all_peers(tracker_resp, meta_info)
-          manage_peers peer_pids ++ new_pids, meta_info
+          needed_peer_num = meta_info[:max_peers] - Enum.count(peer_pids)
+          if needed_peer_num > 0 do
+            new_pids = connect_all_peers(tracker_resp, meta_info, needed_peer_num)
+            manage_peers peer_pids ++ new_pids, meta_info
+          else
+            manage_peers peer_pids, meta_info
+          end
 
         { :finished } -> # download is finished
           Enum.each peer_pids, &(Process.exit(&1, :kill))
@@ -64,7 +73,7 @@ defmodule Torrent.Client do
     send :tracker, { :received, 0 }
     receive do
       { :tracker, tracker_resp } -> # tracker cycle serves new peers
-        new_pids = connect_all_peers(tracker_resp, meta_info)
+        new_pids = connect_all_peers(tracker_resp, meta_info, meta_info[:max_peers])
         manage_peers peer_pids ++ new_pids, meta_info
     end
   end

@@ -109,7 +109,7 @@ defmodule Torrent.Filehandler do
     :file.position(file_info[:file], offset)
     :file.write(file_info[:file], file_data[index][:data])
     # remove data from struct to save memory
-    # IO.puts "free up space.."
+    send :output, { :filehandler, "free up space.." }
     pop_in(file_data, [index]) |> elem(1)
   end
 
@@ -117,8 +117,6 @@ defmodule Torrent.Filehandler do
     path = "#{file_info[:output_path]}/#{meta_info[:name]}"
     %{ size: size } = File.stat! path
     if size != file_length(meta_info) do
-      require IEx
-      IEx.pry
       raise "Wrong Filesize!"
     end
     if multi_file?(meta_info) do

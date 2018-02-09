@@ -10,7 +10,8 @@ defmodule Torrent do
           Torrent.Parser.parse_magnet(torrent)
     end
 
-    Torrent.Client.connect meta_info, output_path
+    put_in(meta_info, [:max_peers], 20)
+    |> Torrent.Client.connect(output_path)
   end
 
   def init do
