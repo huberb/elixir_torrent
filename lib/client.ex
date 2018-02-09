@@ -3,7 +3,7 @@ defmodule Torrent.Client do
   def connect(meta_info, output_path) do
     Process.flag(:trap_exit, true)
 
-    self()                                      |> Process.register(:client)
+    self()                                      |> Process.register(:torrent)
     Torrent.Request.start_link()                |> Process.register(:request)
     Torrent.Output.start_link()                 |> Process.register(:output)
     Torrent.Tracker.start_link(meta_info)       |> Process.register(:tracker)
@@ -76,7 +76,7 @@ defmodule Torrent.Client do
       Process.unregister name
       Process.exit pid, :kill
     end
-    Process.unregister :client
+    Process.unregister :torrent
   end
 
   def send_metadata_to_peers(peer_pids, meta_info) do

@@ -39,7 +39,7 @@ defmodule Torrent.Tracker do
             request(torrent, 0)
         end
       # tell client about new peers
-      send :client, { :tracker, response }
+      send :torrent, { :tracker, response }
       # loop
       serve_peers(torrent)
     end
@@ -107,7 +107,7 @@ defmodule Torrent.Tracker do
           after 30_000 ->
             request(torrent, socket)
         end
-      send :client, { :tracker, response }
+      send :torrent, { :tracker, response }
       serve_peers(torrent, socket)
     end
 
