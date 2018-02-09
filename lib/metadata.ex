@@ -9,7 +9,7 @@ defmodule Torrent.Metadata do
         meta_info = wait_for_metadata()
         send_metadata(meta_info)
       else # we have the metadata
-        send :torrent, { :meta_info, meta_info }
+        send :torrent_client, { :meta_info, meta_info }
         send_metadata(meta_info)
       end
       stay_alive()

@@ -33,7 +33,7 @@ defmodule Torrent.Filehandler do
 
   defp manage_files(file_data, file_info, info) do
     if download_complete?(file_info) do
-      send :torrent, { :finished }
+      send :torrent_client, { :finished }
       verify_file_length(file_data, file_info, info)
     else
       receive do
@@ -84,7 +84,7 @@ defmodule Torrent.Filehandler do
     # piece complete?
     if piece_size == byte_size(block) do
       send :request, { :received, index, from }
-      send :torrent, { :received, index }
+      send :torrent_client, { :received, index }
       send :output, { :writer, "piece #{index} complete" }
 
       Torrent.Parser.verify_piece(file_info[:piece_info], index, block)
