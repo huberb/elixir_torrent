@@ -11,7 +11,7 @@ defmodule Torrent do
 
 
   """
-  def init do
+  def init(torrent) do
     # torrent = "./examples/ubuntu-14.torrent"
 
     # ubuntu
