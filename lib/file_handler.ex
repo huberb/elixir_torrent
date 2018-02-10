@@ -165,7 +165,6 @@ defmodule Torrent.Filehandler do
     name 
     |> String.downcase 
     |> String.replace(" ", "_")
-    |> String.replace(".", "_")
     |> String.replace(",", "_")
     |> String.replace(":", "_")
     |> String.replace(";", "_")
