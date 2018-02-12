@@ -5,48 +5,47 @@ defmodule Torrent.Filehandler do
     { _, pid } = Task.start_link(fn -> 
       Process.flag(:priority, :high)
 
-      %{ info: info } = Torrent.Metadata.wait_for_metadata()
-      info = update_in(info, [:name], &(escape_filename(&1)))
+      %{ info: torrent_info } = Torrent.Metadata.wait_for_metadata()
+      torrent_info = update_in(torrent_info, [:name], &(escape_filename(&1)))
 
       mkdir_tmp()
-      path = "#{output_path}/#{info[:name]}"
+      path = "#{output_path}/#{torrent_info[:name]}"
       File.rm(path)
       File.touch(path)
       { _, file } = :file.open(path, [:read, :write, :binary])
 
       file_info = %{
-        pieces_needed: num_pieces(info),
-        last_piece_size: last_piece_size(info),
-        piece_info: info[:pieces],
+        pieces_needed: num_pieces(torrent_info),
+        last_piece_size: last_piece_size(torrent_info),
+        piece_info: torrent_info[:pieces],
         output_path: output_path,
         file: file,
-        piece_length: info[:piece_length],
+        piece_length: torrent_info[:piece_length],
         recv_pieces: []
       }
 
       send :output, { :meta_info, file_info[:pieces_needed] }
-
-      manage_files(%{}, file_info, info)
+      manage_files(%{}, file_info, torrent_info)
     end)
     pid
   end
 
-  defp manage_files(file_data, file_info, info) do
+  defp manage_files(file_data, file_info, torrent_info) do
     if download_complete?(file_info) do
       send :torrent_client, { :finished }
-      verify_file_length(file_data, file_info, info)
+      verify_file_length(file_data, file_info, torrent_info)
     else
       receive do
         { :tracker } ->
           send :tracker, { :received, length(file_info[:recv_pieces]) }
-          manage_files(file_data, file_info, info)
+          manage_files(file_data, file_info, torrent_info)
 
         { :put, block, index, offset } ->
           if index in file_info[:recv_pieces] do # already have this
-            manage_files(file_data, file_info, info)
+            manage_files(file_data, file_info, torrent_info)
           else
             { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
-            manage_files(file_data, file_info, info)
+            manage_files(file_data, file_info, torrent_info)
           end
       end
     end
@@ -83,7 +82,7 @@ defmodule Torrent.Filehandler do
 
     # piece complete?
     if piece_size == byte_size(block) do
-      send :request, { :received, index, from }
+      # send :request, { :received, index, from }
       send :torrent_client, { :received, index }
       send :output, { :writer, "piece #{index} complete" }
 
@@ -122,7 +121,6 @@ defmodule Torrent.Filehandler do
     if multi_file?(meta_info) do
       split_into_files(path, meta_info)
     end
-    send :output, { :finish, "Filesize correct: #{file_length(meta_info)} bytes" }
   end
 
   # TODO: not good enough

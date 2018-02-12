@@ -19,7 +19,8 @@ defmodule Torrent.Peer do
         if e.message == "timeout" do
           # IO.puts "got a Timeout on IP: " <> ip
           if count == 5 do
-            send :output, { :peer, "fifth try on IP " <> ip <> " ... stopping now!" }
+            # send :output, 
+            # { :peer, "fifth try on IP " <> ip <> " ... stopping now!" }
             exit(:normal)
           else
             connect(ip, port, count + 1)
@@ -36,7 +37,7 @@ defmodule Torrent.Peer do
       |> hear_hello
 
     verify_checksum info_hash, info_structs[:meta_info]
-    send :output, { :peer, "handshake to peer completed" }
+    # send :output, { :peer, "handshake to peer completed" }
     
     socket |> Torrent.Stream.leech(info_structs, options)
   end

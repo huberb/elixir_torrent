@@ -12,7 +12,7 @@ defmodule Torrent.Output do
   end
 
   def output_loop(info) do
-    IO.puts "got #{info[:completed]} / #{info[:needed]}"
+    # IO.puts "got #{info[:completed]} / #{info[:needed]}"
     receive do
       { from, message } ->
         case from do
