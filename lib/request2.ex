@@ -80,25 +80,34 @@ defmodule Torrent.Request2 do
   end
 
   def request(peers, pieces, request_info, count \\ @request_count) do
-    piece = pending_piece(pieces)
+    piece = get_pending_piece(pieces)
     piece = 
       if piece != nil, do: piece, 
-      else: requested_piece(pieces)
+      else: get_requested_piece(pieces)
 
     { connection, peer } = 
       peers_with_piece(peers, piece[:index]) 
       |> Enum.shuffle()
       |> List.first()
 
+    if get_pending_piece(pieces) == nil &&
+       peer == nil do
+         require IEx
+         IEx.pry
+    end
     cond do 
       count == 0 ->
         manage_requests peers, pieces, request_info
       peer == nil ->
         request peers, pieces, request_info, count - 1
       true ->
-        send_block_request(peer[:socket], piece)
+        peers = 
+          case send_block_request(peer[:socket], piece) do
+            :ok -> update_in(peers, [connection, :load], &(&1 + 1))
+            _ -> Map.pop(peers, connection) |> elem(1)
+          end
+        Torrent.Logger.log :peers, length(peers_with_piece(peers, piece[:index]))
         pieces = requested_piece(pieces, piece)
-        peers = update_in(peers, [connection, :load], &(&1 + 1))
         request peers, pieces, request_info, count - 1
     end
   end
@@ -129,12 +138,12 @@ defmodule Torrent.Request2 do
     [piece] ++ pieces
   end
 
-  def pending_piece(pieces) do
+  def get_pending_piece(pieces) do
     Enum.filter(pieces, fn piece -> piece[:state] == :pending end)
     |> List.first()
   end
-  def requested_piece(pieces) do
-    Enum.filter(pieces, fn piece -> piece[:state] == :pending end)
+  def get_requested_piece(pieces) do
+    Enum.filter(pieces, fn piece -> piece[:state] == :requested end)
     |> Enum.shuffle()
     |> List.first()
   end
