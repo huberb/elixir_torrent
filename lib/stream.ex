@@ -25,7 +25,6 @@ defmodule Torrent.Stream do
 
     socket
     |> send_interested
-    # |> send_unchoke
     |> pipe_message(info_structs)
   end
 
@@ -66,8 +65,9 @@ defmodule Torrent.Stream do
       len: len - 9,
       data: socket |> recv_byte!(len - 9)
     }
-    send :output, { :peer, "received #{index} with offset: #{offset}" }
-    send :writer, { :put, block, index, offset }
+    # Torrent.Logger.log :peer, "received #{index} with offset: #{offset}"
+    send :request, { :received, info_structs[:peer], index, offset }
+    send :writer,  { :put, block, index, offset }
     pipe_message(socket, info_structs)
   end
 
@@ -85,13 +85,13 @@ defmodule Torrent.Stream do
   def have(socket, info_structs) do
     index = socket |> recv_32_bit_int
     send :request, 
-      { :piece, info_structs[:peer], index }
+      { :piece, info_structs[:peer], socket, index }
     pipe_message(socket, info_structs)
   end
 
   def unchoke(socket, info_structs) do
     send :request,
-      { :state, info_structs[:peer], :unchoke }
+      { :state, info_structs[:peer], socket, :unchoke }
     pipe_message(socket, info_structs)
   end
 
@@ -130,14 +130,14 @@ defmodule Torrent.Stream do
   def wait_for_memory do
     used_space = :erlang.memory(:total) / 1024 / 1024
     if used_space > 200 do
-      send :output, { :peer, "waiting for memory.." }
+      Torrent.Logger.log :peer, "waiting for memory.."
       :timer.sleep 1000
       wait_for_memory()
     end
   end
 
   def pipe_message(socket, info_structs) do
-    wait_for_memory
+    # wait_for_memory()
     info_structs = process_communication(socket, info_structs)
     len = socket |> recv_32_bit_int
 

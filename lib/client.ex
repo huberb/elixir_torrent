@@ -4,8 +4,7 @@ defmodule Torrent.Client do
     Process.flag(:trap_exit, true)
 
     self()                                      |> Process.register(:torrent_client)
-    Torrent.Request.start_link()                |> Process.register(:request)
-    Torrent.Output.start_link()                 |> Process.register(:output)
+    Torrent.Request2.start_link()                |> Process.register(:request)
     Torrent.Tracker.start_link(meta_info)       |> Process.register(:tracker)
     Torrent.Filehandler.start_link(output_path) |> Process.register(:writer)
     Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
@@ -19,7 +18,7 @@ defmodule Torrent.Client do
   end
 
   def connect_all_peers(peers, meta_info) do
-    send :output, { :client, "connecting #{Enum.count(peers)} new peers" }
+    # Torrent.Logger.log :client, "connecting #{Enum.count(peers)} new peers"
 
     Enum.map(peers, fn(peer) -> 
       %{ meta_info: meta_info, peer: peer }
@@ -28,8 +27,8 @@ defmodule Torrent.Client do
   end
 
   def manage_peers(peer_pids, meta_info) do
-    send :output, { :client, "connected with #{Enum.count(peer_pids)} peers" }
-      { peer_pids, meta_info } = connect_some_peers(meta_info, peer_pids)
+    # Torrent.Logger.log :client, "connected with #{Enum.count(peer_pids)} peers"
+    { peer_pids, meta_info } = connect_some_peers(meta_info, peer_pids)
     receive do
       { :EXIT, from, :normal } -> # peer died
         peer_pids = List.delete peer_pids, from

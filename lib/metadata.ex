@@ -25,7 +25,7 @@ defmodule Torrent.Metadata do
   def send_metadata(meta_info) do
     send :request, { :meta_info, meta_info }
     send :writer, { :meta_info, meta_info }
-    send :output, { :info, "sent all metadata to peers"  }
+    Torrent.Logger.log :info, "sent all metadata to peers" 
   end
 
   def wait_for_metadata do
