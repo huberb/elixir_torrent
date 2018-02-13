@@ -8,10 +8,10 @@ defmodule Torrent do
           Torrent.Parser.parse_file(torrent)
         false ->
           Torrent.Parser.parse_magnet(torrent)
-    end
+      end
 
     # :observer.start()
-    put_in(meta_info, [:max_peers], 20)
+    put_in(meta_info, [:max_peers], 100)
     |> Torrent.Client.connect(output_path)
   end
 

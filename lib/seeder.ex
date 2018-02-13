@@ -16,7 +16,7 @@ defmodule Torrent.Seeder do
   def open_port(port) do
     case Socket.TCP.listen(port) do
       { :ok, socket } -> 
-        send :output, { :seeder, "opened port on #{port}" }
+        Torrent.Logger.log :seeder, "opened port on #{port}"
         { socket, port }
       { :error, _ } -> 
         open_port(port + 1)
@@ -25,7 +25,7 @@ defmodule Torrent.Seeder do
 
   def listen(client) do
     _ = Socket.Stream.recv!(client)
-    send :output, { :seeder, "incoming connection, haha" }
+    Torrent.Logger.log :seeder, "incoming connection, haha"
     listen(client)
   end
 

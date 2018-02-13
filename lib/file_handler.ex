@@ -24,7 +24,6 @@ defmodule Torrent.Filehandler do
         recv_pieces: []
       }
 
-      send :output, { :meta_info, file_info[:pieces_needed] }
       manage_files(%{}, file_info, torrent_info)
     end)
     pid
@@ -80,11 +79,12 @@ defmodule Torrent.Filehandler do
     end
     block = concat_block(file_data[index])
 
+    Torrent.Logger.log :writer, file_info[:recv_pieces] |> length
+
     # piece complete?
     if piece_size == byte_size(block) do
       # send :request, { :received, index, from }
       send :torrent_client, { :received, index }
-      send :output, { :writer, "piece #{index} complete" }
 
       Torrent.Parser.verify_piece(file_info[:piece_info], index, block)
       file_info = update_in(file_info, [:recv_pieces], &(&1 ++ [index]))
@@ -108,7 +108,6 @@ defmodule Torrent.Filehandler do
     :file.position(file_info[:file], offset)
     :file.write(file_info[:file], file_data[index][:data])
     # remove data from struct to save memory
-    send :output, { :filehandler, "free up space.." }
     pop_in(file_data, [index]) |> elem(1)
   end
 

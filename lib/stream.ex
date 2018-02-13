@@ -65,7 +65,7 @@ defmodule Torrent.Stream do
       len: len - 9,
       data: socket |> recv_byte!(len - 9)
     }
-    send :output,  { :peer, "received #{index} with offset: #{offset}" }
+    # Torrent.Logger.log :peer, "received #{index} with offset: #{offset}"
     send :request, { :received, info_structs[:peer], index, offset }
     send :writer,  { :put, block, index, offset }
     pipe_message(socket, info_structs)
@@ -130,7 +130,7 @@ defmodule Torrent.Stream do
   def wait_for_memory do
     used_space = :erlang.memory(:total) / 1024 / 1024
     if used_space > 200 do
-      send :output, { :peer, "waiting for memory.." }
+      Torrent.Logger.log :peer, "waiting for memory.."
       :timer.sleep 1000
       wait_for_memory()
     end

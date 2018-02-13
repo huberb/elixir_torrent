@@ -1,6 +1,7 @@
 defmodule Torrent.Request2 do
   @data_request_len 16384 # 2^14 is a common size
-  @request_count 2 # how many requests per received block
+  @request_count 2 # how many request tries per received block
+  @max_load 3 # max load on one peer
   # @data_request_len 8192 # 2^13 for simple offset tests
 
   def data_request_len do
@@ -60,8 +61,8 @@ defmodule Torrent.Request2 do
 
       # have message from peer
       { :piece, connection, socket, index } ->
-        peers = add_peer_info(peers, connection, socket, index)
-        request(peers, pieces, request_info)
+        add_peer_info(peers, connection, socket, index)
+        |> request(pieces, request_info)
 
       # choke or unchoke message
       { :state, connection, socket, state } ->
@@ -69,22 +70,22 @@ defmodule Torrent.Request2 do
         |> request(pieces, request_info)
 
       # received block
-      # TODO: remember who sent it
-      { :received, _connection, index, offset } ->
+      { :received, connection, index, offset } ->
+        Torrent.Logger.log(:request, length(pieces)) 
         pieces = received_block(pieces, index, offset)
-        IO.puts length(pieces)
+        peers = update_in(peers, [connection, :load], &(&1 - 1))
         request peers, pieces, request_info
 
     end
   end
 
   def request(peers, pieces, request_info, count \\ @request_count) do
-    piece = piece_with_state(pieces, :pending)
+    piece = pending_piece(pieces)
     piece = 
       if piece != nil, do: piece, 
-      else: piece_with_state(pieces, :requested)
+      else: requested_piece(pieces)
 
-    peer = 
+    { connection, peer } = 
       peers_with_piece(peers, piece[:index]) 
       |> Enum.shuffle()
       |> List.first()
@@ -97,6 +98,7 @@ defmodule Torrent.Request2 do
       true ->
         send_block_request(peer[:socket], piece)
         pieces = requested_piece(pieces, piece)
+        peers = update_in(peers, [connection, :load], &(&1 + 1))
         request peers, pieces, request_info, count - 1
     end
   end
@@ -114,12 +116,6 @@ defmodule Torrent.Request2 do
     piece_index = 
       Enum.find_index(pieces, 
         fn(piece) -> piece[:index] == index && piece[:offset] == offset end)
-
-    if index == 1189 && offset == 507904 do
-      require IEx
-      IEx.pry
-    end
-
     List.pop_at(pieces, piece_index) |> elem(1)
   end
 
@@ -133,8 +129,13 @@ defmodule Torrent.Request2 do
     [piece] ++ pieces
   end
 
-  def piece_with_state(pieces, state) do
-    Enum.filter(pieces, fn piece -> piece[:state] == state end)
+  def pending_piece(pieces) do
+    Enum.filter(pieces, fn piece -> piece[:state] == :pending end)
+    |> List.first()
+  end
+  def requested_piece(pieces) do
+    Enum.filter(pieces, fn piece -> piece[:state] == :pending end)
+    |> Enum.shuffle()
     |> List.first()
   end
 
@@ -143,15 +144,16 @@ defmodule Torrent.Request2 do
   end
 
   def add_peer(peers, connection, socket) do
-    put_in(peers, [connection], %{ state: :choked, socket: socket, pieces: [] } )
+    put_in(peers, [connection], 
+           %{ state: :choked, socket: socket, load: 0, pieces: [] } )
   end
 
-  def add_peer_info(peers, connection, socket, state) when is_atom(state) do
+  def add_peer_state(peers, connection, socket, state) when is_atom(state) do
     if peers[connection] == nil do
       add_peer(peers, connection, socket)
-      |> put_in([connection, :state], :unchoked)
+      |> put_in([connection, :state], state)
     else
-      put_in peers, [connection, :state], :unchoked
+      put_in peers, [connection, :state], state
     end
   end
 
@@ -165,11 +167,16 @@ defmodule Torrent.Request2 do
   end
 
   def peers_with_piece(peers, index) do
-    Enum.filter(peers, fn({connection, info}) -> 
+    new_peers = Enum.filter(peers, fn({connection, info}) -> 
       Enum.member?(info[:pieces], index) &&
-      info[:state] == :unchoke
+      info[:state] == :unchoke &&
+      info[:load] < @max_load
     end)
-    |> Enum.map(fn({connection, info}) -> info end)
+    if Enum.empty?(new_peers) do
+      [{nil, nil}]
+    else
+      new_peers
+    end
   end
 
   def add_bitfield(peers, connection, bitfield, request_info) do
@@ -204,8 +211,8 @@ defmodule Torrent.Request2 do
     request_length = 13 # length of packet
     id = if type == :request, do: 6, else: 8
 
-    send :output, 
-    { :request, "sending request: index #{index}, offset: #{offset}, size: #{size}" }
+    Torrent.Logger.log :request, 
+      "sending request: index #{index}, offset: #{offset}, size: #{size}"
 
     << request_length :: 32 >>
     <> << id :: 8 >>

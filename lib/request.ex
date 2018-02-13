@@ -28,7 +28,7 @@ defmodule Torrent.Request do
   end
 
   def manage_requests(piece_struct, peer_struct, meta_info) do
-    send :output, { :requester, "REQUEST CYCLE" }
+    Torrent.Logger.log :requester, "REQUEST CYCLE"
     receive do
       { :bitfield, peer_ip, socket, bitfield } ->
         peer_struct = add_new_peer peer_struct, peer_ip, socket
@@ -45,7 +45,7 @@ defmodule Torrent.Request do
 
       { :received, index, from } ->
         { ip, _ } = from
-        send :output, { :request, "received #{index}, from #{ip}" }
+        Torrent.Logger.log :request, "received #{index}, from #{ip}"
         piece_struct = put_in piece_struct, [index, :state], :received 
         peer_struct = update_in peer_struct, [from, :load], &(&1 - 1) 
         unless any_pending?(piece_struct) do
@@ -108,12 +108,12 @@ defmodule Torrent.Request do
             { piece_struct, peer_struct }
 
           [ first | peers ] -> # request from a list of peers
-            send :output, { :request, "sending request for #{index}" }
+            Torrent.Logger.log :request, "sending request for #{index}"
             request_from_all peer_struct, index, meta_info, first, peers 
             { piece_struct, peer_struct }
 
           peer_ip -> # found one good peer for request
-            send :output, { :request, "sending request for #{index}" }
+            Torrent.Logger.log :request, "sending request for #{index}"
             peer_struct[peer_ip][:socket] 
             |> send_piece_request(index, 0, meta_info, :request)
             {
