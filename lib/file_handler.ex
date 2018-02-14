@@ -40,6 +40,7 @@ defmodule Torrent.Filehandler do
           manage_files(file_data, file_info, torrent_info)
 
         { :put, block, index, offset } ->
+          IO.puts "filehandler got #{index} with #{offset}"
           if index in file_info[:recv_pieces] do # already have this
             manage_files(file_data, file_info, torrent_info)
           else
@@ -117,6 +118,7 @@ defmodule Torrent.Filehandler do
     if size != file_length(meta_info) do
       raise "Wrong Filesize!"
     end
+    Torrent.Logger.log :writer, "Filesize correct: #{size}"
     if multi_file?(meta_info) do
       split_into_files(path, meta_info)
     end

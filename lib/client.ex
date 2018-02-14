@@ -27,7 +27,7 @@ defmodule Torrent.Client do
   end
 
   def manage_peers(peer_pids, meta_info) do
-    # Torrent.Logger.log :client, "connected with #{Enum.count(peer_pids)} peers"
+    Torrent.Logger.log :client, "connected with #{Enum.count(peer_pids)} peers"
     { peer_pids, meta_info } = connect_some_peers(meta_info, peer_pids)
     receive do
       { :EXIT, from, :normal } -> # peer died
@@ -76,7 +76,7 @@ defmodule Torrent.Client do
   end
 
   def shutdown do
-    processes = [:output, :tracker, :metadata, :request, :seeder]
+    processes = [:tracker, :metadata, :request, :seeder]
     Enum.each processes, fn(name) ->
       pid = Process.whereis name
       Process.unregister name

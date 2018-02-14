@@ -20,37 +20,59 @@ defmodule Torrent.Request2 do
         num_pieces: num_pieces,
         last_piece_size: last_piece_size,
         piece_length: meta_info[:info][:piece_length],
-        request_stack: 0,
+        endgame: false,
+        request_index: 0,
+        request_offset: 0,
+        request_size: @data_request_len
       }
 
-      pieces = create_piece_struct([], request_info)
-      manage_requests %{}, pieces, request_info
+      manage_requests %{}, [], request_info
     end)
     pid
   end
 
-  def create_piece_struct(acc, request_info, index \\ 0, offset \\ 0) do
-    piece_len = piece_length(index, request_info)
-    last_piece? = request_info[:num_pieces] - 1 == index
-    last_block? = offset + @data_request_len >= piece_len
+  def next_block(request_info, pieces) do
+    if request_info[:endgame] do
+      pieces |> Enum.shuffle() |> List.first()
+    else
+      %{
+        index: request_info[:request_index], 
+        offset: request_info[:request_offset], 
+        size: request_info[:request_size] 
+      }
+    end
+  end
 
-    cond do 
-      last_piece? && last_block? ->
-        size = request_info[:last_piece_size] - offset
-        size = if size <= 0, do: @data_request_len, else: size
-        add_block(acc, index, offset, size)
+  def raise_block_counter(request_info) do
+    if request_info[:request_index] == request_info[:num_pieces] do
+      request_info
+    else
+      index = request_info[:request_index]
+      offset = request_info[:request_offset]
+      piece_len = piece_length(index, request_info)
+      last_piece? = request_info[:num_pieces] - 1 == index
+      last_block? = offset + @data_request_len >= piece_len
 
-      last_block? ->
-        add_block(acc, index, offset, @data_request_len)
-        |> create_piece_struct(request_info, index + 1, 0)
+      cond do 
+        last_piece? && last_block? ->
+          size = request_info[:last_piece_size] - offset
+          size = if size <= 0, do: @data_request_len, else: size
+          put_in(request_info, [:endgame], true)
+          |> put_in([:request_size], size)
 
-      true ->
-        add_block(acc, index, offset, @data_request_len)
-        |> create_piece_struct(request_info, index, offset + @data_request_len)
+        last_block? ->
+          update_in(request_info, [:request_index], &(&1 + 1))
+          |> put_in([:request_offset], 0)
+
+        true ->
+          update_in(request_info, [:request_offset], &(&1 + @data_request_len))
+
+      end
     end
   end
 
   def manage_requests(peers, pieces, request_info) do
+    IO.puts length(pieces)
     receive do
       # add a new connection with its piece infos
       { :bitfield, connection, socket, bitfield } ->
@@ -71,30 +93,23 @@ defmodule Torrent.Request2 do
 
       # received block
       { :received, connection, index, offset } ->
-        Torrent.Logger.log(:request, length(pieces)) 
         pieces = received_block(pieces, index, offset)
         peers = update_in(peers, [connection, :load], &(&1 - 1))
         request peers, pieces, request_info
 
+      after 3_000 ->
+        request peers, pieces, request_info
     end
   end
 
   def request(peers, pieces, request_info, count \\ @request_count) do
-    piece = get_pending_piece(pieces)
-    piece = 
-      if piece != nil, do: piece, 
-      else: get_requested_piece(pieces)
+    block = next_block(request_info, pieces)
 
     { connection, peer } = 
-      peers_with_piece(peers, piece[:index]) 
+      peers_with_piece(peers, block[:index]) 
       |> Enum.shuffle()
       |> List.first()
 
-    if get_pending_piece(pieces) == nil &&
-       peer == nil do
-         require IEx
-         IEx.pry
-    end
     cond do 
       count == 0 ->
         manage_requests peers, pieces, request_info
@@ -102,12 +117,12 @@ defmodule Torrent.Request2 do
         request peers, pieces, request_info, count - 1
       true ->
         peers = 
-          case send_block_request(peer[:socket], piece) do
+          case send_block_request(peer[:socket], block) do
             :ok -> update_in(peers, [connection, :load], &(&1 + 1))
             _ -> Map.pop(peers, connection) |> elem(1)
           end
-        Torrent.Logger.log :peers, length(peers_with_piece(peers, piece[:index]))
-        pieces = requested_piece(pieces, piece)
+        request_info = raise_block_counter(request_info)
+        pieces = pieces ++ [block]
         request peers, pieces, request_info, count - 1
     end
   end
@@ -126,30 +141,6 @@ defmodule Torrent.Request2 do
       Enum.find_index(pieces, 
         fn(piece) -> piece[:index] == index && piece[:offset] == offset end)
     List.pop_at(pieces, piece_index) |> elem(1)
-  end
-
-  def requested_piece(pieces, piece) do
-    index = 
-      Enum.find_index(pieces, 
-        fn(p) -> p[:index] == piece[:index] && p[:offset] == piece[:offset] end)
-
-    { piece, pieces } = List.pop_at(pieces, index)
-    piece = %{ piece | state: :requested }
-    [piece] ++ pieces
-  end
-
-  def get_pending_piece(pieces) do
-    Enum.filter(pieces, fn piece -> piece[:state] == :pending end)
-    |> List.first()
-  end
-  def get_requested_piece(pieces) do
-    Enum.filter(pieces, fn piece -> piece[:state] == :requested end)
-    |> Enum.shuffle()
-    |> List.first()
-  end
-
-  def add_block(pieces, index, offset, size) do
-    pieces ++ [%{ index: index, offset: offset, size: size, state: :pending }]
   end
 
   def add_peer(peers, connection, socket) do

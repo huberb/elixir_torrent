@@ -65,7 +65,7 @@ defmodule Torrent.Stream do
       len: len - 9,
       data: socket |> recv_byte!(len - 9)
     }
-    # Torrent.Logger.log :peer, "received #{index} with offset: #{offset}"
+    Torrent.Logger.log :peer, "received #{index} with offset: #{offset}"
     send :request, { :received, info_structs[:peer], index, offset }
     send :writer,  { :put, block, index, offset }
     pipe_message(socket, info_structs)
