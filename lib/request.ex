@@ -167,8 +167,12 @@ defmodule Torrent.Request do
     update_in(peers, [connection, :load], &(&1 ++ [System.system_time(:seconds)]))
   end
   def dec_peer_load(peers, connection) do
-    min = peers[connection][:load] |> Enum.min
-    update_in(peers, [connection, :load], &(List.delete(&1, min)))
+    min = peers[connection][:load] |> Enum.min(false)
+    if min do
+      update_in(peers, [connection, :load], &(List.delete(&1, min)))
+    else
+      peers
+    end
   end
 
   def piece_length(index, request_info) do
