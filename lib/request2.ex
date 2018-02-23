@@ -45,7 +45,7 @@ defmodule Torrent.Request2 do
 
   def raise_block_counter(request_info) do
     if request_info[:request_index] == request_info[:num_pieces] do
-      request_info
+      put_in(request_info, [:endgame], true)
     else
       index = request_info[:request_index]
       offset = request_info[:request_offset]
@@ -57,8 +57,7 @@ defmodule Torrent.Request2 do
         last_piece? && last_block? ->
           size = request_info[:last_piece_size] - offset
           size = if size <= 0, do: @data_request_len, else: size
-          put_in(request_info, [:endgame], true)
-          |> put_in([:request_size], size)
+          put_in(request_info, [:request_size], size)
 
         last_block? ->
           update_in(request_info, [:request_index], &(&1 + 1))
@@ -72,7 +71,6 @@ defmodule Torrent.Request2 do
   end
 
   def manage_requests(peers, pieces, request_info) do
-    IO.puts length(pieces)
     receive do
       # add a new connection with its piece infos
       { :bitfield, connection, socket, bitfield } ->
