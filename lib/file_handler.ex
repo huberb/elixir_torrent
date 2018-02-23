@@ -21,7 +21,7 @@ defmodule Torrent.Filehandler do
         output_path: output_path,
         file: file,
         piece_length: torrent_info[:piece_length],
-        recv_pieces: []
+        recv_blocks: 0
       }
 
       manage_files(%{}, file_info, torrent_info)
@@ -29,24 +29,25 @@ defmodule Torrent.Filehandler do
     pid
   end
 
-  defp manage_files(file_data, file_info, torrent_info) do
-    if download_complete?(file_info) do
+  defp manage_files(file_info, torrent_info) do
+    if download_complete?(file_info, torrent_info) do
       send :torrent_client, { :finished }
-      verify_file_length(file_data, file_info, torrent_info)
+      if multi_file?(torrent_info) do
+        path = "#{file_info[:output_path]}/#{torrent_info[:name]}"
+        split_into_files(path, torrent_info)
+      end
     else
       receive do
         { :tracker } ->
           send :tracker, { :received, length(file_info[:recv_pieces]) }
-          manage_files(file_data, file_info, torrent_info)
+          manage_files(file_info, torrent_info)
 
         { :put, block, index, offset } ->
           IO.puts "filehandler got #{index} with #{offset}"
-          if index in file_info[:recv_pieces] do # already have this
-            manage_files(file_data, file_info, torrent_info)
-          else
-            { file_data, file_info } = add_block(file_data, file_info, index, offset, block)
-            manage_files(file_data, file_info, torrent_info)
-          end
+          # file_data = add_block(file_data, file_info, index, offset, block)
+          file_info = block_completed(file_info, index, offset, block)
+          # file_data = pop_in(file_data, [index, offset]) |> elem(1)
+          manage_files(file_info, torrent_info)
       end
     end
   end
@@ -59,41 +60,13 @@ defmodule Torrent.Filehandler do
         _ ->
           file_data
       end
-
     put_in(file_data, [index, offset], block)
-    |> block_completed(file_info, index, block[:peer])
   end
 
-  def add_piece(file_data, index, block, from) do
-    file_data
-    |> pop_in([index]) 
-    |> elem(1)
-    |> put_in([index], %{})
-    |> put_in([index, :data], block)
-    |> put_in([index, :peer], from)
-  end
-
-  def block_completed(file_data, file_info, index, from) do
-    piece_size = cond do
-      index == file_info[:pieces_needed] - 1 -> file_info[:last_piece_size]
-      true -> file_info[:piece_length]
-    end
-    block = concat_block(file_data[index])
-
-    Torrent.Logger.log :writer, file_info[:recv_pieces] |> length
-
-    # piece complete?
-    if piece_size == byte_size(block) do
-      send :torrent_client, { :received, index }
-
-      Torrent.Parser.verify_piece(file_info[:piece_info], index, block)
-      file_info = update_in(file_info, [:recv_pieces], &(&1 ++ [index]))
-      file_data = add_piece(file_data, index, block, from)
-      file_data = write_piece(file_data, file_info, index)
-      { file_data, file_info }
-    else
-      { file_data, file_info }
-    end
+  def block_completed(file_info, index, offset, block) do
+    Torrent.Logger.log :writer, file_info[:recv_blocks]
+    write_block(file_info, index, offset, block)
+    update_in(file_info, [:recv_blocks], &(&1 + 1))
   end
 
   def concat_block(block) do
@@ -103,26 +76,12 @@ defmodule Torrent.Filehandler do
     |> Enum.join("")
   end
 
-  def write_piece(file_data, file_info, index) do
-    offset = file_info[:piece_length] * index
-    :file.position(file_info[:file], offset)
-    :file.write(file_info[:file], file_data[index][:data])
-    # remove data from struct to save memory
-    pop_in(file_data, [index]) |> elem(1)
+  def write_block(file_info, index, offset, block) do
+    file_position = file_info[:piece_length] * index + offset
+    :file.position(file_info[:file], file_position)
+    :file.write(file_info[:file], block[:data])
   end
-
-  defp verify_file_length(file_data, file_info, meta_info) do
-    path = "#{file_info[:output_path]}/#{meta_info[:name]}"
-    %{ size: size } = File.stat! path
-    if size != file_length(meta_info) do
-      raise "Wrong Filesize!"
-    end
-    Torrent.Logger.log :writer, "Filesize correct: #{size}"
-    if multi_file?(meta_info) do
-      split_into_files(path, meta_info)
-    end
-  end
-
+ 
   # TODO: not good enough
   defp split_into_files(source_file_path, meta_info) do
     tmp_source_file_name = source_file_path <> "tmp"
@@ -174,8 +133,14 @@ defmodule Torrent.Filehandler do
     |> String.replace("{", "_")
   end
 
-  defp download_complete?(file_info) do
-    length(file_info[:recv_pieces]) == file_info[:pieces_needed]
+  defp download_complete?(file_info, meta_info) do
+    path = "#{file_info[:output_path]}/#{meta_info[:name]}"
+    %{ size: size } = File.stat! path
+    if size == file_length(meta_info) do
+      true
+    else
+      false
+    end
   end
 
   def num_pieces(meta_info) do
