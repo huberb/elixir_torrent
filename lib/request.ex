@@ -1,8 +1,8 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
-  # @data_request_len 8192 # 2^13 for simple offset tests
-  @max_piece_req 4 # how many max requests per cycle
-  @max_load 3 # max concurrent requests on one peer
+  @request_count 3 # how many request tries per received block
+  @max_load 3 # max load on one peer
+  @expire_time 3 # seconds until a request has to be answered
 
   def data_request_len do
     @data_request_len
@@ -11,249 +11,275 @@ defmodule Torrent.Request do
   def start_link() do
     { _, pid } = Task.start_link(fn ->
       Process.flag(:priority, :high)
-      meta_info = Torrent.Metadata.wait_for_metadata() |> received_meta_info
-      piece_struct = create_piece_struct meta_info
-      manage_requests piece_struct, %{}, meta_info
+
+      meta_info = Torrent.Metadata.wait_for_metadata()
+      num_pieces = Torrent.Filehandler.num_pieces meta_info[:info] 
+      last_piece_size = Torrent.Filehandler.last_piece_size meta_info[:info] 
+
+      request_info = %{
+        num_pieces: num_pieces,
+        last_piece_size: last_piece_size,
+        piece_length: meta_info[:info][:piece_length],
+        endgame: false,
+        request_index: 0,
+        request_offset: 0,
+        request_size: @data_request_len
+      }
+
+      manage_requests %{}, [], request_info
     end)
     pid
   end
 
-  def received_meta_info(meta_info) do
-    num_pieces = Torrent.Filehandler.num_pieces meta_info[:info] 
-    last_piece_size = Torrent.Filehandler.last_piece_size meta_info[:info] 
-
-    meta_info 
-    |> put_in([:num_pieces], num_pieces)
-    |> put_in([:last_piece_size], last_piece_size)
+  def next_block(request_info, pieces) do
+    if request_info[:endgame] do
+      if Enum.empty?(pieces) do
+        Torrent.Logger.log :request, "all pieces received, requester shutting down.."
+        wait_for_shutdown()
+      else
+        pieces |> Enum.shuffle() |> List.first()
+      end
+    else
+      %{
+        index: request_info[:request_index], 
+        offset: request_info[:request_offset], 
+        size: request_info[:request_size] 
+      }
+    end
   end
 
-  def manage_requests(piece_struct, peer_struct, meta_info) do
-    Torrent.Logger.log :requester, "REQUEST CYCLE"
+  def wait_for_shutdown() do
     receive do
-      { :bitfield, peer_ip, socket, bitfield } ->
-        peer_struct = add_new_peer peer_struct, peer_ip, socket
-        piece_struct = add_bitfield piece_struct, peer_ip, bitfield, 0
-        manage_requests piece_struct, peer_struct, meta_info 
-
-      { :piece, peer_ip, index } ->
-        piece_struct = add_new_peer_ip piece_struct, peer_ip, index 
-        manage_requests(piece_struct, peer_struct, meta_info)
-
-      { :state, peer_ip, state } ->
-        peer_struct = add_state_to_peer peer_struct, peer_ip, state 
-        request piece_struct, peer_struct, meta_info 
-
-      { :received, index, from } ->
-        { ip, _ } = from
-        Torrent.Logger.log :request, "received #{index}, from #{ip}"
-        piece_struct = put_in piece_struct, [index, :state], :received 
-        peer_struct = update_in peer_struct, [from, :load], &(&1 - 1) 
-        unless any_pending?(piece_struct) do
-          cancel peer_struct, meta_info, index 
-        end
-        request piece_struct, peer_struct, meta_info 
-
-      after 3_000 ->
-        request piece_struct, peer_struct, meta_info 
+      { _ } -> wait_for_shutdown()
     end
   end
 
-  def cancel(peer_struct, meta_info, index) do
-    Enum.each peer_struct, fn({_, info}) ->
-      socket = info[:socket]
-      send_piece_request(socket, index, 0, meta_info, :cancel)
-    end 
-  end
-
-  def pieces_to_request(piece_struct, meta_info) do
-    unless any_pending?(piece_struct) do
-      piece_struct 
-      |> Enum.filter(fn({_, info}) -> info[:state] == :requested end)
-      |> Enum.shuffle
-      |> Enum.take(@max_piece_req)
-      |> Enum.map(fn({index, _}) -> index end)
+  def raise_block_counter(request_info) do
+    if request_info[:endgame] do
+      request_info
     else
-      piece_struct 
-      |> Enum.filter(fn({_, info}) -> info[:state] == :pending end)
-      |> Enum.sort_by(fn({index, _}) -> -index end) # start with highest index
-      |> Enum.take(@max_piece_req)
-      |> Enum.map(fn({index, _}) -> index end)
-    end
-  end
+      index = request_info[:request_index]
+      offset = request_info[:request_offset]
+      piece_len = piece_length(index, request_info)
+      last_block? = last_block?(request_info, index, offset)
 
-  def any_pending?(piece_struct) do
-    Enum.any? piece_struct, fn({_, info}) -> info[:state] == :pending end 
-  end
+      cond do 
+        last_piece?(request_info, index) && last_block? ->
+          put_in(request_info, [:request_size], block_size(index + 1, 0, request_info))
+          |> put_in([:endgame], true)
 
-  def request(piece_struct, peer_struct, meta_info) do
-    pieces = pieces_to_request piece_struct, meta_info 
-    request piece_struct, peer_struct, meta_info, pieces 
-  end
+        last_block? ->
+          put_in(request_info, [:request_index], index + 1)
+          |> put_in([:request_offset], 0)
+          |> put_in([:request_size], block_size(index + 1, 0, request_info))
 
-  def create_piece_struct(meta_info) do
-    0..meta_info[:num_pieces] - 1
-    |> Enum.map(fn(index) -> { index, %{ state: :pending, peers: [], } } end)
-    |> Map.new
-  end
-
-  def request(piece_struct, peer_struct, meta_info, pieces) do
-    if length(pieces) == 0 do
-      manage_requests piece_struct, peer_struct, meta_info 
-    else
-      index = pieces |> Enum.at(0)
-      { piece_struct, peer_struct } =
-        case find_good_peer(piece_struct, peer_struct, index, meta_info) do
-
-          nil ->  # could not find a peer for piece
-            { piece_struct, peer_struct }
-
-          [ first | peers ] -> # request from a list of peers
-            Torrent.Logger.log :request, "sending request for #{index}"
-            request_from_all peer_struct, index, meta_info, first, peers 
-            { piece_struct, peer_struct }
-
-          peer_ip -> # found one good peer for request
-            Torrent.Logger.log :request, "sending request for #{index}"
-            peer_struct[peer_ip][:socket] 
-            |> send_piece_request(index, 0, meta_info, :request)
-            {
-              put_in(piece_struct, [index, :state], :requested),
-              update_in(peer_struct, [peer_ip, :load], &(&1 + 1))
-            }
-
-        end
-        request piece_struct, peer_struct, meta_info, List.delete_at(pieces, 0) 
-    end
-  end
-
-  # request a piece from all peers
-  def request_from_all(peer_struct, index, meta_info, next, remaining) do
-    { peer_ip, info } = next
-    peer_struct[peer_ip][:socket] 
-    |> send_piece_request(index, 0, meta_info, :request)
-
-    if length(remaining) > 0 do
-      [ next | remaining ] = remaining
-      request_from_all peer_struct, index, meta_info, next, remaining 
-    end
-  end
-
-  # find a peer that can send the piece
-  def find_good_peer(piece_struct, peer_struct, index, meta_info) do
-    connections_with_piece = piece_struct[index][:peers]
-
-    filtered_peers = 
-      peer_struct
-      |> Enum.filter(
-        fn({key, info}) -> 
-          key in connections_with_piece
-          && info[:state] == :unchoke
-        end)
-
-    unless any_pending?(piece_struct) do
-      peers = filtered_peers |> Enum.shuffle |> Enum.take(5)
-      if Enum.empty?(peers), do: nil, else: peers
-    else
-      # return the id with the lowest load
-      %{ id: peer_ip, load: _ } =
-        filtered_peers
-        |> Enum.reduce(%{id: nil, load: @max_load}, 
-           fn({peer_ip, info}, acc) -> 
-             if info[:load] < acc[:load] do
-               %{ id: peer_ip, load: info[:load] }
-             else
-               acc
-             end
-           end)
-      peer_ip
-    end
-  end
-
-  # peer switched from choke to unchoke or vv
-  def add_state_to_peer(peer_struct, id, state) do
-    if peer_struct[id] != nil do
-      put_in peer_struct, [id, :state], state 
-    else
-      peer_struct
-    end
-  end
-
-  # new peer connection
-  def add_new_peer(peer_struct, id, socket) do
-    case peer_struct[id] do
-      nil ->
-        peer_struct |> Map.put(id, %{state: :choke, socket: socket, load: 0})
-      _   ->
-        peer_struct
-    end
-  end
-
-  # add peer to list of available sender for one piece
-  def add_new_peer_ip(piece_struct, peer, index) do
-    update_in piece_struct, [index, :peers], &(&1 ++ [peer]) 
-  end
-
-  def add_bitfield(piece_struct, peer, bitfield, bit_index) do
-    if piece_struct[bit_index] == nil do
-      piece_struct
-    else
-      case bitfield |> Enum.at(bit_index) do
-        "1" ->
-          piece_struct 
-          |> add_new_peer_ip(peer, bit_index)
-          |> add_bitfield(peer, bitfield, bit_index + 1)
-        "0" ->
-          piece_struct 
-          |> add_bitfield(peer, bitfield, bit_index + 1)
+        true ->
+          update_in(request_info, [:request_offset], &(&1 + @data_request_len))
       end
     end
   end
 
-  def send_piece_request(socket, index, offset, meta_info, type) do
-    send_block_request socket, index, offset, meta_info, type 
-    len = piece_length index, meta_info 
-    if offset + @data_request_len < len do
-      new_offset = offset + @data_request_len
-      send_piece_request socket, index, new_offset, meta_info, type 
+  def block_size(index, offset, request_info) do
+    last_piece? = request_info[:num_pieces] - 1 == index
+    piece_len = piece_length(index, request_info)
+    last_block? = last_block?(request_info, index, offset)
+    if last_piece?(request_info, index) && last_block? do
+      size = request_info[:last_piece_size] - offset
+      size = if size <= 0, do: @data_request_len, else: size
+    else
+      @data_request_len
     end
   end
 
-  def send_block_request(socket, index, offset, meta_info, type) do
-    req = request_query index, offset, meta_info, type 
+  def manage_requests(peers, pieces, request_info) do
+    receive do
+      # add a new connection with its piece infos
+      { :bitfield, connection, socket, bitfield } ->
+        peers
+        |> add_peer(connection, socket) 
+        |> add_bitfield(connection, bitfield, request_info)
+        |> manage_requests(pieces, request_info)
+
+      # have message from peer
+      { :piece, connection, socket, index } ->
+        add_peer_info(peers, connection, socket, index)
+        |> request(pieces, request_info)
+
+      # choke or unchoke message
+      { :state, connection, socket, state } ->
+        put_in(peers, [connection, :state], state)
+        |> request(pieces, request_info)
+
+      # received block
+      { :received, connection, index, offset } ->
+        Torrent.Logger.log :request, "request for #{index}, #{offset} finished"
+        pieces = received_block(pieces, index, offset)
+        peers = dec_peer_load(peers, connection)
+        request peers, pieces, request_info
+
+      after 3_000 ->
+        peers = expire_requests(peers)
+        request peers, pieces, request_info
+    end
+  end
+
+  def request(peers, pieces, request_info, count \\ @request_count) do
+    if count == 0 do
+      manage_requests peers, pieces, request_info
+    else
+      block = next_block(request_info, pieces)
+
+      { connection, peer } = 
+        peers_with_piece(peers, block[:index]) 
+        |> Enum.shuffle()
+        |> List.first()
+
+      IO.inspect peer
+
+      cond do 
+        peer == nil ->
+          request peers, pieces, request_info, count - 1
+        true ->
+          peers = 
+            case send_block_request(peer[:socket], block) do
+              :ok -> inc_peer_load(peers, connection)
+              _ -> Map.pop(peers, connection) |> elem(1)
+            end
+          pieces = add_block(pieces, block)
+          request_info = raise_block_counter(request_info)
+          request peers, pieces, request_info, count - 1
+      end
+    end
+  end
+
+  def expire_requests(peers) do
+    current = System.system_time(:seconds)
+    Enum.map(peers, fn({peer, connection}) -> 
+      update_in peer, [connection, :load], &(Enum.filter(&1, fn(time) -> 
+        current - time > @expire_time
+      end))
+    end)
+  end
+  def inc_peer_load(peers, connection) do
+    update_in(peers, [connection, :load], &(&1 ++ [System.system_time(:seconds)]))
+  end
+  def dec_peer_load(peers, connection) do
+    min = peers[connection][:load] |> Enum.min
+    update_in(peers, [connection, :load], &(List.delete(&1, min)))
+  end
+
+  def piece_length(index, request_info) do
+    num_pieces = request_info[:num_pieces]
+    if index != num_pieces - 1 do
+      request_info[:piece_length]
+    else
+      request_info[:last_piece_size]
+    end
+  end
+
+  def received_block(pieces, index, offset) do
+    piece_index = 
+      Enum.find_index(pieces, 
+        fn(piece) -> piece[:index] == index && piece[:offset] == offset end)
+    if piece_index == nil do
+      pieces
+    else
+      List.pop_at(pieces, piece_index) |> elem(1)
+    end
+  end
+
+  def add_block(pieces, block) do
+    if Enum.member?(pieces, block) do
+      pieces
+    else
+      pieces ++ [block]
+    end
+  end
+
+  def add_peer(peers, connection, socket) do
+    put_in(peers, [connection], 
+           %{ state: :choked, socket: socket, load: [], pieces: [] } )
+  end
+
+  def add_peer_state(peers, connection, socket, state) when is_atom(state) do
+    if peers[connection] == nil do
+      add_peer(peers, connection, socket)
+      |> put_in([connection, :state], state)
+    else
+      put_in peers, [connection, :state], state
+    end
+  end
+
+  def add_peer_info(peers, connection, socket, index) when is_integer(index) do
+    if peers[connection] == nil do
+      add_peer(peers, connection, socket)
+      |> update_in([connection, :pieces], &(Enum.uniq(&1 ++ [index])))
+    else
+      update_in peers, [connection, :pieces], &(Enum.uniq(&1 ++ [index]))
+    end
+  end
+
+  def peers_with_piece(peers, index) do
+    new_peers = Enum.filter(peers, fn({connection, info}) -> 
+      Enum.member?(info[:pieces], index) &&
+      info[:state] == :unchoke &&
+      length(info[:load]) < @max_load
+    end)
+    if Enum.empty?(new_peers) do
+      [{nil, nil}]
+    else
+      new_peers
+    end
+  end
+
+  def add_bitfield(peers, connection, bitfield, request_info) do
+    add_bitfield(peers, connection, bitfield, 0, request_info[:num_pieces])
+  end
+  def add_bitfield(peers, connection, bitfield, index, max) do
+    if index == max do
+      peers
+    else
+      case Enum.at(bitfield, index) do
+        "1" ->
+          peers 
+          |> update_in([connection, :pieces], &(&1 ++ [index]))
+          |> add_bitfield(connection, bitfield, index + 1, max)
+        "0" ->
+          peers 
+          |> add_bitfield(connection, bitfield, index + 1, max)
+      end
+    end
+  end
+
+  def last_piece?(request_info, index) do
+    request_info[:num_pieces] - 1 == index
+  end
+  def last_block?(request_info, index, offset) do
+    piece_len = piece_length(index, request_info)
+    offset + @data_request_len >= piece_len
+  end
+
+  def send_block_request(socket, piece) do
+    %{ index: index, offset: offset, size: size } = piece
+    send_block_request(socket, index, offset, size, :request)
+  end
+  def send_block_request(socket, index, offset, size, type) do
+    req = request_query index, offset, size, type 
     socket |> Socket.Stream.send(req)
   end
 
-  def piece_length(index, meta_info) do
-    info_hash = meta_info[:info]
-    num_pieces = meta_info[:num_pieces]
-    if index != num_pieces - 1 do
-      meta_info[:info][:piece_length]
-    else
-      meta_info[:last_piece_size]
-    end
-  end
-
-  def request_query(index, offset, meta_info, type) do
-    num_pieces = meta_info[:num_pieces]
-    request_length = 13
+  def request_query(index, offset, size, type) do
+    request_length = 13 # length of packet
     id = if type == :request, do: 6, else: 8
-    last_piece? = num_pieces - 1 == index
-    last_block? = offset + @data_request_len > meta_info[:last_piece_size]
 
-    block_size = cond do
-      last_piece? && last_block? ->
-        size = meta_info[:last_piece_size] - offset
-        if size <= 0, do: @data_request_len, else: size
-      true -> 
-        @data_request_len
-    end
+    Torrent.Logger.log :request, 
+      "sending request: index #{index}, offset: #{offset}, size: #{size}"
 
-    # IO.puts "index: #{index}, offset: #{offset}, block_size: #{block_size}"
     << request_length :: 32 >>
     <> << id :: 8 >>
     <> << index :: 32 >>
     <> << offset :: 32 >>
-    <> << block_size :: 32 >>
+    <> << size :: 32 >>
   end
 
 end

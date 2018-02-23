@@ -4,7 +4,7 @@ defmodule Torrent.Client do
     Process.flag(:trap_exit, true)
 
     self()                                      |> Process.register(:torrent_client)
-    Torrent.Request2.start_link()                |> Process.register(:request)
+    Torrent.Request.start_link()                |> Process.register(:request)
     Torrent.Tracker.start_link(meta_info)       |> Process.register(:tracker)
     Torrent.Filehandler.start_link(output_path) |> Process.register(:writer)
     Torrent.Metadata.start_link(meta_info)      |> Process.register(:metadata)
