@@ -24,7 +24,7 @@ defmodule Torrent.Filehandler do
         recv_blocks: 0
       }
 
-      manage_files(%{}, file_info, torrent_info)
+      manage_files(file_info, torrent_info)
     end)
     pid
   end
