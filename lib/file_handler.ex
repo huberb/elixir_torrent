@@ -84,7 +84,6 @@ defmodule Torrent.Filehandler do
 
     # piece complete?
     if piece_size == byte_size(block) do
-      # send :request, { :received, index, from }
       send :torrent_client, { :received, index }
 
       Torrent.Parser.verify_piece(file_info[:piece_info], index, block)

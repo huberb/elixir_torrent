@@ -33,7 +33,12 @@ defmodule Torrent.Request2 do
 
   def next_block(request_info, pieces) do
     if request_info[:endgame] do
-      pieces |> Enum.shuffle() |> List.first()
+      if Enum.empty?(pieces) do
+        Torrent.Logger.log :request, "all pieces received, requester shutting down.."
+        wait_for_shutdown()
+      else
+        pieces |> Enum.shuffle() |> List.first()
+      end
     else
       %{
         index: request_info[:request_index], 
@@ -43,30 +48,46 @@ defmodule Torrent.Request2 do
     end
   end
 
+  def wait_for_shutdown() do
+    receive do
+      { _ } -> wait_for_shutdown()
+    end
+  end
+
   def raise_block_counter(request_info) do
-    if request_info[:request_index] == request_info[:num_pieces] do
-      put_in(request_info, [:endgame], true)
+    if request_info[:endgame] do
+      request_info
     else
       index = request_info[:request_index]
       offset = request_info[:request_offset]
       piece_len = piece_length(index, request_info)
-      last_piece? = request_info[:num_pieces] - 1 == index
-      last_block? = offset + @data_request_len >= piece_len
+      last_block? = last_block?(request_info, index, offset)
 
       cond do 
-        last_piece? && last_block? ->
-          size = request_info[:last_piece_size] - offset
-          size = if size <= 0, do: @data_request_len, else: size
-          put_in(request_info, [:request_size], size)
+        last_piece?(request_info, index) && last_block? ->
+          put_in(request_info, [:request_size], block_size(index + 1, 0, request_info))
+          |> put_in([:endgame], true)
 
         last_block? ->
-          update_in(request_info, [:request_index], &(&1 + 1))
+          put_in(request_info, [:request_index], index + 1)
           |> put_in([:request_offset], 0)
+          |> put_in([:request_size], block_size(index + 1, 0, request_info))
 
         true ->
           update_in(request_info, [:request_offset], &(&1 + @data_request_len))
-
       end
+    end
+  end
+
+  def block_size(index, offset, request_info) do
+    last_piece? = request_info[:num_pieces] - 1 == index
+    piece_len = piece_length(index, request_info)
+    last_block? = last_block?(request_info, index, offset)
+    if last_piece?(request_info, index) && last_block? do
+      size = request_info[:last_piece_size] - offset
+      size = if size <= 0, do: @data_request_len, else: size
+    else
+      @data_request_len
     end
   end
 
@@ -91,6 +112,7 @@ defmodule Torrent.Request2 do
 
       # received block
       { :received, connection, index, offset } ->
+        Torrent.Logger.log :request, "request for #{index}, #{offset} finished"
         pieces = received_block(pieces, index, offset)
         peers = update_in(peers, [connection, :load], &(&1 - 1))
         request peers, pieces, request_info
@@ -101,27 +123,29 @@ defmodule Torrent.Request2 do
   end
 
   def request(peers, pieces, request_info, count \\ @request_count) do
-    block = next_block(request_info, pieces)
+    if count == 0 do
+      manage_requests peers, pieces, request_info
+    else
+      block = next_block(request_info, pieces)
 
-    { connection, peer } = 
-      peers_with_piece(peers, block[:index]) 
-      |> Enum.shuffle()
-      |> List.first()
+      { connection, peer } = 
+        peers_with_piece(peers, block[:index]) 
+        |> Enum.shuffle()
+        |> List.first()
 
-    cond do 
-      count == 0 ->
-        manage_requests peers, pieces, request_info
-      peer == nil ->
-        request peers, pieces, request_info, count - 1
-      true ->
-        peers = 
-          case send_block_request(peer[:socket], block) do
-            :ok -> update_in(peers, [connection, :load], &(&1 + 1))
-            _ -> Map.pop(peers, connection) |> elem(1)
-          end
-        request_info = raise_block_counter(request_info)
-        pieces = pieces ++ [block]
-        request peers, pieces, request_info, count - 1
+      cond do 
+        peer == nil ->
+          request peers, pieces, request_info, count - 1
+        true ->
+          peers = 
+            case send_block_request(peer[:socket], block) do
+              :ok -> update_in(peers, [connection, :load], &(&1 + 1))
+              _ -> Map.pop(peers, connection) |> elem(1)
+            end
+          pieces = add_block(pieces, block)
+          request_info = raise_block_counter(request_info)
+          request peers, pieces, request_info, count - 1
+      end
     end
   end
 
@@ -138,7 +162,19 @@ defmodule Torrent.Request2 do
     piece_index = 
       Enum.find_index(pieces, 
         fn(piece) -> piece[:index] == index && piece[:offset] == offset end)
-    List.pop_at(pieces, piece_index) |> elem(1)
+    if piece_index == nil do
+      pieces
+    else
+      List.pop_at(pieces, piece_index) |> elem(1)
+    end
+  end
+
+  def add_block(pieces, block) do
+    if Enum.member?(pieces, block) do
+      pieces
+    else
+      pieces ++ [block]
+    end
   end
 
   def add_peer(peers, connection, socket) do
@@ -194,6 +230,14 @@ defmodule Torrent.Request2 do
           |> add_bitfield(connection, bitfield, index + 1, max)
       end
     end
+  end
+
+  def last_piece?(request_info, index) do
+    request_info[:num_pieces] - 1 == index
+  end
+  def last_block?(request_info, index, offset) do
+    piece_len = piece_length(index, request_info)
+    offset + @data_request_len >= piece_len
   end
 
   def send_block_request(socket, piece) do

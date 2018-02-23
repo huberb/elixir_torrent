@@ -6,6 +6,7 @@ defmodule Torrent.Metadata do
   def start_link(meta_info) do
     { _, pid } = Task.start_link(fn ->
       if meta_info[:info] == nil do # we dont have the metadata
+        Torrent.Logger.log :metadata, "waiting for metadata.. "
         meta_info = wait_for_metadata()
         send_metadata(meta_info)
       else # we have the metadata

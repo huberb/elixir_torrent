@@ -27,7 +27,7 @@ defmodule Torrent.Client do
   end
 
   def manage_peers(peer_pids, meta_info) do
-    Torrent.Logger.log :client, "connected with #{Enum.count(peer_pids)} peers"
+    # Torrent.Logger.log :client, "connected with #{Enum.count(peer_pids)} peers"
     { peer_pids, meta_info } = connect_some_peers(meta_info, peer_pids)
     receive do
       { :EXIT, from, :normal } -> # peer died
