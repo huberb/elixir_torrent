@@ -24,6 +24,7 @@ defmodule Torrent.Extension do
           is_list(info_structs[:meta_info][:info]) ->
             # otherwise we pull we data
             { header, data } = recv_metadata_piece(socket, len) 
+            Torrent.Logger.log :extension, "metadata piece downloaded"
             # concat it with we data we already have
             metadata_pieces = info_structs[:meta_info][:info] ++ [{ header, data }]
 

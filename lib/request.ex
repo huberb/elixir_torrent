@@ -92,6 +92,7 @@ defmodule Torrent.Request do
   end
 
   def manage_requests(peers, pieces, request_info) do
+    peers = expire_requests(peers)
     receive do
       # add a new connection with its piece infos
       { :bitfield, connection, socket, bitfield } ->
@@ -117,8 +118,7 @@ defmodule Torrent.Request do
         peers = dec_peer_load(peers, connection)
         request peers, pieces, request_info
 
-      after 3_000 ->
-        peers = expire_requests(peers)
+      after 1_000 ->
         request peers, pieces, request_info
     end
   end
@@ -154,12 +154,15 @@ defmodule Torrent.Request do
 
   def expire_requests(peers) do
     current = System.system_time(:seconds)
-    Enum.map(peers, fn({peer, connection}) -> 
-      update_in peer, [connection, :load], &(Enum.filter(&1, fn(time) -> 
-        current - time > @expire_time
-      end))
-    end)
+    expire_requests(peers, current, Map.keys(peers))
   end
+  def expire_requests(peers, current, []) do peers end
+  def expire_requests(peers, current, [ connection | connections ]) do
+    update_in(peers, [connection, :load], &(Enum.filter(&1, fn(time) -> 
+      current - time < @expire_time
+    end))) |> expire_requests(current, connections)
+  end
+
   def inc_peer_load(peers, connection) do
     update_in(peers, [connection, :load], &(&1 ++ [System.system_time(:seconds)]))
   end
