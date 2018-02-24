@@ -24,8 +24,9 @@ defmodule Torrent.Seeder do
   end
 
   def listen(client) do
-    _ = Socket.Stream.recv!(client)
+    _ = Socket.Stream.recv(client)
     Torrent.Logger.log :seeder, "incoming connection, haha"
+    :timer.sleep 1000
     listen(client)
   end
 

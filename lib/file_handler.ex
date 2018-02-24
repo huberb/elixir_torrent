@@ -10,7 +10,7 @@ defmodule Torrent.Filehandler do
 
       mkdir_tmp()
       path = "#{output_path}/#{torrent_info[:name]}"
-      File.rm(path)
+      File.rm_rf(path)
       File.touch(path)
       { _, file } = :file.open(path, [:read, :write, :binary])
 

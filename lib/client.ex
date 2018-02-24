@@ -79,8 +79,10 @@ defmodule Torrent.Client do
     processes = [:tracker, :metadata, :request, :seeder]
     Enum.each processes, fn(name) ->
       pid = Process.whereis name
-      Process.unregister name
-      Process.exit pid, :kill
+      if Process.alive?(pid) do
+        Process.unregister name
+        Process.exit pid, :kill
+      end
     end
     Process.unregister :torrent_client
   end
