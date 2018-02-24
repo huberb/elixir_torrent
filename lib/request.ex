@@ -1,8 +1,8 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
   @request_count 5 # how many request tries per received block
-  @max_load 5 # max load on one peer
-  @expire_time 3 # seconds until a request has to be answered
+  @max_load 3 # max load on one peer
+  @expire_time 5 # seconds until a request has to be answered
 
   def data_request_len do
     @data_request_len
@@ -35,8 +35,10 @@ defmodule Torrent.Request do
     if request_info[:endgame] do
       if Enum.empty?(pieces) do
         Torrent.Logger.log :request, "all pieces received, requester shutting down.."
+        send :writer, { :finished }
         wait_for_shutdown()
       else
+        IO.puts "requesting again.."
         pieces |> Enum.shuffle() |> List.first()
       end
     else
@@ -58,33 +60,23 @@ defmodule Torrent.Request do
     if request_info[:endgame] do
       request_info
     else
-      index = request_info[:request_index]
-      offset = request_info[:request_offset]
-      piece_len = piece_length(index, request_info)
-      last_block? = last_block?(request_info, index, offset)
-
       cond do 
-        last_piece?(request_info, index) && last_block? ->
-          put_in(request_info, [:request_size], block_size(index + 1, 0, request_info))
-          |> put_in([:endgame], true)
-
-        last_block? ->
-          put_in(request_info, [:request_index], index + 1)
-          |> put_in([:request_offset], 0)
-          |> put_in([:request_size], block_size(index + 1, 0, request_info))
+        last_block?(request_info) ->
+          index = request_info[:request_index]
+          request_info = put_in(request_info, [:request_index], index + 1)
+          put_in(request_info, [:request_offset], 0)
+          |> put_in([:request_size], block_size(request_info))
 
         true ->
-          update_in(request_info, [:request_offset], &(&1 + @data_request_len))
+          request_info = update_in(request_info, [:request_offset], &(&1 + @data_request_len))
+          request_info = put_in(request_info, [:request_size], block_size(request_info))
       end
     end
   end
 
-  def block_size(index, offset, request_info) do
-    last_piece? = request_info[:num_pieces] - 1 == index
-    piece_len = piece_length(index, request_info)
-    last_block? = last_block?(request_info, index, offset)
-    if last_piece?(request_info, index) && last_block? do
-      size = request_info[:last_piece_size] - offset
+  def block_size(request_info) do
+    if last_piece?(request_info) && last_block?(request_info) do
+      size = request_info[:last_piece_size] - request_info[:request_offset]
       size = if size <= 0, do: @data_request_len, else: size
     else
       @data_request_len
@@ -124,18 +116,26 @@ defmodule Torrent.Request do
     end
   end
 
+  def check_endgame(request_info, block) do
+    request_info = if block[:index] == request_info[:num_pieces] do
+      IO.puts "endgame true"
+      put_in(request_info, [:endgame], true)
+    else
+      request_info
+    end
+  end
+
   def request(peers, pieces, request_info, count \\ @request_count) do
     if count == 0 do
       manage_requests peers, pieces, request_info
     else
       block = next_block(request_info, pieces)
+      request_info = check_endgame(request_info, block)
 
       { connection, peer } = 
         peers_with_piece(peers, block[:index]) 
         |> Enum.shuffle()
         |> List.first()
-
-      # IO.inspect peer
 
       cond do 
         peer == nil ->
@@ -176,9 +176,9 @@ defmodule Torrent.Request do
     end
   end
 
-  def piece_length(index, request_info) do
+  def piece_length(request_info) do
     num_pieces = request_info[:num_pieces]
-    if index != num_pieces - 1 do
+    if request_info[:request_index] != num_pieces - 1 do
       request_info[:piece_length]
     else
       request_info[:last_piece_size]
@@ -258,12 +258,12 @@ defmodule Torrent.Request do
     end
   end
 
-  def last_piece?(request_info, index) do
-    request_info[:num_pieces] - 1 == index
+  def last_piece?(request_info) do
+    request_info[:num_pieces] - 1 == request_info[:request_index]
   end
-  def last_block?(request_info, index, offset) do
-    piece_len = piece_length(index, request_info)
-    offset + @data_request_len >= piece_len
+  def last_block?(request_info) do
+    piece_len = piece_length(request_info)
+    request_info[:request_offset] + @data_request_len >= piece_len
   end
 
   def send_block_request(socket, piece) do

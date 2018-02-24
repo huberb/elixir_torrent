@@ -30,25 +30,22 @@ defmodule Torrent.Filehandler do
   end
 
   defp manage_files(file_info, torrent_info) do
-    if download_complete?(file_info, torrent_info) do
-      send :torrent_client, { :finished }
-      if multi_file?(torrent_info) do
-        path = "#{file_info[:output_path]}/#{torrent_info[:name]}"
-        split_into_files(path, torrent_info)
-      end
-    else
-      receive do
-        { :tracker } ->
-          send :tracker, { :received, length(file_info[:recv_pieces]) }
-          manage_files(file_info, torrent_info)
+    receive do
+      { :finished } -> 
+        if multi_file?(torrent_info) do
+          path = "#{file_info[:output_path]}/#{torrent_info[:name]}"
+          split_into_files(path, torrent_info)
+        end
+        send :torrent_client, { :finished }
 
-        { :put, block, index, offset } ->
-          # IO.puts "filehandler got #{index} with #{offset}"
-          # file_data = add_block(file_data, file_info, index, offset, block)
-          file_info = block_completed(file_info, index, offset, block)
-          # file_data = pop_in(file_data, [index, offset]) |> elem(1)
-          manage_files(file_info, torrent_info)
-      end
+      { :tracker } ->
+        send :tracker, { :received, length(file_info[:recv_pieces]) }
+        manage_files(file_info, torrent_info)
+
+      { :put, block, index, offset } ->
+        # IO.puts "filehandler got #{index} with #{offset}"
+        file_info = block_completed(file_info, index, offset, block)
+        manage_files(file_info, torrent_info)
     end
   end
 
@@ -131,16 +128,6 @@ defmodule Torrent.Filehandler do
     |> String.replace("]", "_")
     |> String.replace("}", "_")
     |> String.replace("{", "_")
-  end
-
-  defp download_complete?(file_info, meta_info) do
-    path = "#{file_info[:output_path]}/#{meta_info[:name]}"
-    %{ size: size } = File.stat! path
-    if size == file_length(meta_info) do
-      true
-    else
-      false
-    end
   end
 
   def num_pieces(meta_info) do
