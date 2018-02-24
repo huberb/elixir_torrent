@@ -64,7 +64,7 @@ defmodule Torrent.Filehandler do
   end
 
   def block_completed(file_info, index, offset, block) do
-    Torrent.Logger.log :writer, file_info[:recv_blocks]
+    # Torrent.Logger.log :writer, file_info[:recv_blocks]
     write_block(file_info, index, offset, block)
     update_in(file_info, [:recv_blocks], &(&1 + 1))
   end

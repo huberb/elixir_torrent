@@ -22,4 +22,8 @@ defmodule Torrent do
     init(torrent, "tmp")
   end
 
+  def main(_) do
+    init()
+  end
+
 end
