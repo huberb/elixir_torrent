@@ -108,7 +108,8 @@ defmodule Torrent.Request do
 
       # choke or unchoke message
       { :state, connection, socket, state } ->
-        put_in(peers, [connection, :state], state)
+        # put_in(peers, [connection, :state], state)
+        add_peer_state(peers, connection, state)
         |> request(pieces, request_info)
 
       # received block
@@ -167,8 +168,8 @@ defmodule Torrent.Request do
     update_in(peers, [connection, :load], &(&1 ++ [System.system_time(:seconds)]))
   end
   def dec_peer_load(peers, connection) do
-    min = peers[connection][:load] |> Enum.min(fn -> false end)
-    if min do
+    unless peers[connection] == nil || Enum.empty?(peers[connection][:load]) do
+      min = peers[connection][:load] |> Enum.min(fn -> false end)
       update_in(peers, [connection, :load], &(List.delete(&1, min)))
     else
       peers
@@ -208,16 +209,15 @@ defmodule Torrent.Request do
            %{ state: :choked, socket: socket, load: [], pieces: [] } )
   end
 
-  def add_peer_state(peers, connection, socket, state) when is_atom(state) do
+  def add_peer_state(peers, connection, state) do
     if peers[connection] == nil do
-      add_peer(peers, connection, socket)
-      |> put_in([connection, :state], state)
+      peers
     else
       put_in peers, [connection, :state], state
     end
   end
 
-  def add_peer_info(peers, connection, socket, index) when is_integer(index) do
+  def add_peer_info(peers, connection, socket, index) do
     if peers[connection] == nil do
       add_peer(peers, connection, socket)
       |> update_in([connection, :pieces], &(Enum.uniq(&1 ++ [index])))
