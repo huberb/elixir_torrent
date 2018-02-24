@@ -1,7 +1,7 @@
 defmodule Torrent.Request do
   @data_request_len 16384 # 2^14 is a common size
-  @request_count 3 # how many request tries per received block
-  @max_load 3 # max load on one peer
+  @request_count 5 # how many request tries per received block
+  @max_load 5 # max load on one peer
   @expire_time 3 # seconds until a request has to be answered
 
   def data_request_len do
@@ -134,7 +134,7 @@ defmodule Torrent.Request do
         |> Enum.shuffle()
         |> List.first()
 
-      IO.inspect peer
+      # IO.inspect peer
 
       cond do 
         peer == nil ->
@@ -167,7 +167,7 @@ defmodule Torrent.Request do
     update_in(peers, [connection, :load], &(&1 ++ [System.system_time(:seconds)]))
   end
   def dec_peer_load(peers, connection) do
-    min = peers[connection][:load] |> Enum.min(false)
+    min = peers[connection][:load] |> Enum.min(fn -> false end)
     if min do
       update_in(peers, [connection, :load], &(List.delete(&1, min)))
     else

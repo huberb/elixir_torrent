@@ -43,7 +43,7 @@ defmodule Torrent.Filehandler do
           manage_files(file_info, torrent_info)
 
         { :put, block, index, offset } ->
-          IO.puts "filehandler got #{index} with #{offset}"
+          # IO.puts "filehandler got #{index} with #{offset}"
           # file_data = add_block(file_data, file_info, index, offset, block)
           file_info = block_completed(file_info, index, offset, block)
           # file_data = pop_in(file_data, [index, offset]) |> elem(1)

@@ -1,6 +1,6 @@
 defmodule Torrent.Tracker do
 
-  @wait_time_between_request 30000
+  @wait_time_between_request 15000
 
   def wait_time do
     @wait_time_between_request
