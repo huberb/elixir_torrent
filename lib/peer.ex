@@ -82,9 +82,11 @@ defmodule Torrent.Peer do
     # TODO: generate better Peer_id
     id = "BE"
     version = "0044"
-    :random.seed(:erlang.now)
-    number = :random.uniform(1000000000000)
-    number = number |> Integer.to_string |> String.rjust(13, ?0)
+    :rand.seed(:exs1024s, :erlang.timestamp)
+    number = :rand.uniform(1000000000000)
+    # :random.seed(:erlang.now)
+    # number = :random.uniform(1000000000000)
+    number = number |> Integer.to_string |> String.pad_leading(13, "0")
     "-#{id}#{version}#{number}"
   end
 
