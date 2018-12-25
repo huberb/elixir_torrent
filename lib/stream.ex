@@ -112,7 +112,7 @@ defmodule Torrent.Stream do
 
   def process_communication(socket, info_structs) do
     cond do
-      Process.info(self(), :message_queue_len) |> elem(1) > 0 ->
+      length(Process.info(self)[:messages]) > 0 ->
         receive do
           { :received, index } ->
             # IO.puts "sending have message"
