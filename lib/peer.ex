@@ -84,8 +84,6 @@ defmodule Torrent.Peer do
     version = "0044"
     :rand.seed(:exs1024s, :erlang.timestamp)
     number = :rand.uniform(1000000000000)
-    # :random.seed(:erlang.now)
-    # number = :random.uniform(1000000000000)
     number = number |> Integer.to_string |> String.pad_leading(13, "0")
     "-#{id}#{version}#{number}"
   end
