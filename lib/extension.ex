@@ -67,8 +67,8 @@ defmodule Torrent.Extension do
     extension_id = 0
 
     extensions = %{ 
-      'm': %{ 'ut_metadata': @ut_metadata_id }, 
-      'metadata_size': extension_hash[:metadata_size]
+      m: %{ ut_metadata: @ut_metadata_id }, 
+      metadata_size: extension_hash[:metadata_size]
     } |> Bento.encode!
 
     payload = << id :: 8 >> <> << extension_id :: 8 >> <> << extensions :: binary >>
@@ -90,7 +90,7 @@ defmodule Torrent.Extension do
   def ask_for_meta_info(socket, extension_hash, index) do
     bittorrent_id = 20
     metadata_id = extension_hash[:m][:ut_metadata]
-    payload = %{ "msg_type": 0, "piece": index } |> Bento.encode!
+    payload = %{ msg_type: 0, piece: index } |> Bento.encode!
     len = byte_size(payload) + 2
 
     packet = 

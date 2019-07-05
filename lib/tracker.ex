@@ -45,7 +45,7 @@ defmodule Torrent.Tracker do
     end
 
     def random_peer_ip do
-      0..19 |> Enum.map(fn(_) -> :random.uniform(9) end) |> Enum.join |> String.to_integer
+      0..19 |> Enum.map(fn(_) -> :rand.uniform(9) end) |> Enum.join |> String.to_integer
     end
 
     def tcp_query(torrent_info, received) do

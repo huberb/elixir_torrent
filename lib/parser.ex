@@ -75,7 +75,7 @@ defmodule Torrent.Parser do
     |> Tuple.to_list
     |> List.delete_at(0)
     |> Enum.at(0)
-    |> Enum.chunk(6)
+    |> Enum.chunk_every(6)
     |> Enum.map(&parse_peer/1) 
   end
 
